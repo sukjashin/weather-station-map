@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# 로컬 개발용 (깃에 올리지 않음)
+.claude/
+
+# 편집기
+.vscode/
+.idea/

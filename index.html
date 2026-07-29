@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>광주·전남 AWS 기상관측망 관리</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+/* ===== 기본 설정 ===== */
+:root{
+  --navy:#0d2f5c;
+  --blue:#1461a8;
+  --blue-soft:#e9f1fa;
+  --ink:#1b2733;
+  --muted:#5d6b7a;
+  --line:#dfe5ec;
+  --bg:#f3f6f9;
+  --card:#ffffff;
+  --ok:#157f4b;      /* 정상 */
+  --ok-bg:#e6f4ec;
+  --soon:#9a6200;    /* 곧 도래 */
+  --soon-bg:#fdf1dc;
+  --due:#c03a19;     /* 점검필요 */
+  --due-bg:#fbe9e4;
+  --unknown:#5d6b7a;
+  --unknown-bg:#eceff3;
+  --radius:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+  font-size:16px; line-height:1.6;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:540px;margin:0 auto;background:var(--card);min-height:100vh;box-shadow:0 0 40px rgba(13,47,92,.08)}
+section{padding:22px 18px;border-bottom:8px solid var(--bg)}
+section:last-of-type{border-bottom:0}
+h2{font-size:19px;margin:0 0 4px;letter-spacing:-.3px}
+.sec-desc{font-size:14px;color:var(--muted);margin:0 0 16px}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+
+/* ===== ① 헤더 ===== */
+header{
+  background:linear-gradient(160deg,var(--navy),var(--blue));
+  color:#fff;padding:26px 18px 24px;
+}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{
+  width:46px;height:46px;border-radius:12px;flex:0 0 46px;
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);
+  display:flex;align-items:center;justify-content:center;
+}
+.logo svg{width:26px;height:26px}
+header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-.5px}
+header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
+
+/* ===== 알림 배너 ===== */
+.banner{
+  display:none;margin:0;padding:12px 18px;background:#fff6e5;
+  border-bottom:1px solid #f0dcb4;color:#7a5200;font-size:13.5px;line-height:1.5;
+}
+.banner.show{display:block}
+.banner code{background:#f6ead0;padding:1px 5px;border-radius:4px;font-size:12.5px}
+
+/* ===== ③ 지도 + 목록 ===== */
+#map{height:330px;border-radius:var(--radius);border:1px solid var(--line);background:#e8eef3;overflow:hidden}
+.map-fail{display:none;padding:28px 16px;text-align:center;color:var(--muted);font-size:14px}
+.tools{display:flex;gap:8px;margin:14px 0 10px}
+.search{
+  flex:1;padding:11px 14px;border:1px solid var(--line);border-radius:10px;
+  font-size:15px;background:#fbfcfd;color:var(--ink);min-width:0;
+}
+.search:focus{outline:2px solid var(--blue);outline-offset:-1px;background:#fff}
+.fitBtn{
+  flex:0 0 auto;padding:0 13px;border-radius:10px;border:1px solid var(--line);
+  background:#fff;color:var(--blue);font-size:13.5px;font-weight:700;white-space:nowrap;
+}
+.chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;-webkit-overflow-scrolling:touch}
+.chip{
+  flex:0 0 auto;padding:7px 13px;border-radius:999px;border:1px solid var(--line);
+  background:#fff;color:var(--muted);font-size:13.5px;font-weight:600;white-space:nowrap;
+}
+.chip[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+
+/* 목록 접기/펴기 */
+.list-toggle{
+  width:100%;display:flex;align-items:center;gap:8px;
+  padding:14px 15px;border:1px solid var(--line);border-radius:12px;background:#fff;
+  font-size:15.5px;font-weight:700;color:var(--ink);text-align:left;
+}
+.list-toggle .cnt{color:var(--muted);font-weight:600;font-size:13.5px}
+.list-toggle .caret{margin-left:auto;color:var(--muted);font-size:13px;transition:transform .2s}
+.list-toggle[aria-expanded="true"]{border-color:var(--blue);color:var(--blue)}
+.list-toggle[aria-expanded="true"] .caret{transform:rotate(180deg);color:var(--blue)}
+#listBox{margin-top:12px}
+#listBox[hidden]{display:none}
+
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+.item{
+  display:flex;align-items:flex-start;gap:11px;
+  border:1px solid var(--line);border-radius:var(--radius);padding:13px 13px 13px 12px;background:#fff;
+}
+.item.picked{border-color:var(--blue);background:#f6faff;box-shadow:0 0 0 1px var(--blue) inset}
+.item-main{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;color:inherit;font-size:inherit}
+.item-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;line-height:1.35}
+.item-name{font-size:16.5px;font-weight:700;letter-spacing:-.3px}
+.item-id{font-size:12px;color:var(--muted);background:var(--bg);border-radius:5px;padding:1px 6px}
+.item-addr{display:block;font-size:13.5px;color:var(--muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item-next{display:block;font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45}
+.item-next b{color:var(--ink);font-weight:600}
+.pick{
+  flex:0 0 auto;width:42px;height:42px;border-radius:10px;border:1px solid var(--line);
+  background:#fff;color:var(--muted);font-size:12px;font-weight:700;line-height:1.15;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+}
+.pick[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+.pick svg{width:16px;height:16px}
+.empty{padding:26px 10px;text-align:center;color:var(--muted);font-size:14px}
+
+/* 상태 배지 */
+.badge{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:12px;font-weight:700;padding:2px 8px 2px 6px;border-radius:999px;white-space:nowrap;
+}
+.badge svg{width:13px;height:13px}
+.b-ok{background:var(--ok-bg);color:var(--ok)}
+.b-soon{background:var(--soon-bg);color:var(--soon)}
+.b-due{background:var(--due-bg);color:var(--due)}
+.b-unknown{background:var(--unknown-bg);color:var(--unknown)}
+
+/* 지도 핀 */
+.pin{
+  width:28px;height:28px;border-radius:50% 50% 50% 2px;transform:rotate(-45deg);
+  border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);
+  display:flex;align-items:center;justify-content:center;
+}
+.pin span{transform:rotate(45deg);color:#fff;font-size:12px;font-weight:800;line-height:1}
+.pin-ok{background:var(--ok)}
+.pin-soon{background:var(--soon)}
+.pin-due{background:var(--due)}
+.pin-unknown{background:var(--unknown)}
+
+/* ===== ④ 경로 ===== */
+.route-box{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:15px}
+.route-from{font-size:13.5px;color:var(--muted);margin:0 0 10px}
+.route-from b{color:var(--ink)}
+.picked-tags{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;min-height:4px}
+.tag{
+  display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);
+  border-radius:999px;padding:5px 6px 5px 12px;font-size:13.5px;font-weight:600;
+}
+.tag button{border:0;background:#eef2f6;color:var(--muted);width:20px;height:20px;border-radius:50%;
+  font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.btn{
+  width:100%;padding:14px;border-radius:11px;border:0;background:var(--blue);color:#fff;
+  font-size:16px;font-weight:700;letter-spacing:-.3px;
+}
+.btn:disabled{background:#c3ccd6;color:#fff}
+.btn-ghost{background:#fff;color:var(--blue);border:1.5px solid var(--blue)}
+.route-note{font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.5}
+
+.route-result{margin-top:14px;display:none}
+.route-result.show{display:block}
+.route-total{
+  background:var(--navy);color:#fff;border-radius:11px;padding:13px 15px;
+  display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;
+}
+.route-total span{font-size:13.5px;opacity:.85}
+.route-total b{font-size:22px;font-weight:800;letter-spacing:-.5px}
+.steps{list-style:none;margin:0;padding:0}
+.step{display:flex;gap:12px;align-items:flex-start;position:relative;padding-bottom:16px}
+.step:last-child{padding-bottom:0}
+.step::before{
+  content:"";position:absolute;left:13px;top:28px;bottom:0;width:2px;background:var(--line);
+}
+.step:last-child::before{display:none}
+.step-no{
+  flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:var(--blue);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;z-index:1;
+}
+.step-no.office{background:var(--navy)}
+.step-body{flex:1;min-width:0;padding-top:2px}
+.step-name{font-size:15.5px;font-weight:700}
+.step-meta{font-size:12.5px;color:var(--muted);margin-top:1px}
+
+/* ===== ⑤ 파노라마 ===== */
+.pano-pick{font-size:13.5px;color:var(--muted);margin:0 0 10px}
+.pano-pick b{color:var(--ink)}
+.pano{
+  position:relative;height:250px;border-radius:var(--radius);overflow:hidden;
+  border:1px solid var(--line);background:#dfe5ea;
+  background-repeat:repeat-x;cursor:grab;touch-action:pan-y;user-select:none;
+}
+.pano.dragging{cursor:grabbing}
+.pano-hint{
+  position:absolute;left:50%;bottom:12px;transform:translateX(-50%);
+  background:rgba(13,47,92,.78);color:#fff;font-size:12.5px;padding:6px 13px;border-radius:999px;
+  pointer-events:none;white-space:nowrap;
+}
+.pano-empty{
+  height:250px;border-radius:var(--radius);border:1.5px dashed #c5d0da;background:#fafcfd;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  padding:20px;color:var(--muted);font-size:14px;gap:8px;
+}
+.pano-empty svg{width:36px;height:36px;opacity:.45}
+.pano-empty b{color:var(--ink);font-size:15px}
+.pano-spec{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.6}
+
+/* ===== ⑥ 하단 ===== */
+footer{background:var(--navy);color:#fff;padding:24px 18px 34px}
+footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
+.foot-row{display:flex;gap:10px;font-size:13.5px;padding:6px 0;border-top:1px solid rgba(255,255,255,.14)}
+.foot-row:first-of-type{border-top:0}
+.foot-row dt{flex:0 0 84px;opacity:.7;margin:0}
+.foot-row dd{margin:0;flex:1}
+.foot-note{margin:16px 0 0;font-size:12px;opacity:.6;line-height:1.6}
+
+/* ===== 바텀시트 ===== */
+.sheet-dim{
+  position:fixed;inset:0;background:rgba(13,25,40,.45);opacity:0;pointer-events:none;
+  transition:opacity .22s;z-index:1000;
+}
+.sheet-dim.show{opacity:1;pointer-events:auto}
+.sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:1001;
+  max-width:540px;margin:0 auto;background:#fff;
+  border-radius:20px 20px 0 0;padding:8px 18px calc(22px + env(safe-area-inset-bottom));
+  transform:translateY(102%);transition:transform .26s cubic-bezier(.2,.8,.3,1);
+  max-height:86vh;overflow-y:auto;
+}
+.sheet.show{transform:translateY(0)}
+.grip{width:40px;height:4px;border-radius:99px;background:#d5dbe2;margin:6px auto 14px}
+.sheet-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:4px}
+.sheet-head h3{margin:0;font-size:22px;font-weight:800;letter-spacing:-.6px}
+.sheet-addr{font-size:14px;color:var(--muted);margin:6px 0 16px}
+.info{list-style:none;margin:0 0 16px;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.info li{display:flex;gap:10px;padding:11px 14px;font-size:14px;border-top:1px solid var(--line)}
+.info li:first-child{border-top:0}
+.info b{flex:0 0 96px;color:var(--muted);font-weight:500}
+.info span{flex:1;font-weight:600}
+.info .warn{color:var(--due)}
+.sheet-btns{display:flex;gap:9px}
+.sheet-btns .btn{flex:1;padding:14px 8px;font-size:15px;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:6px}
+.sheet-btns svg{width:17px;height:17px}
+.sheet-close{
+  position:absolute;top:14px;right:16px;width:32px;height:32px;border-radius:50%;
+  border:0;background:#eef2f6;color:var(--muted);font-size:17px;line-height:1;padding:0;
+}
+
+.loading{padding:60px 20px;text-align:center;color:var(--muted)}
+@media (min-width:560px){ body{padding:0} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ① 헤더 -->
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v9"/><path d="M12 4l-5 3 5 1.6L17 7z"/><circle cx="12" cy="2" r="1.4" fill="#fff"/>
+          <path d="M8 21h8"/><path d="M12 11v10"/><path d="M4 14h3M17 14h3"/>
+        </svg>
+      </div>
+      <div>
+        <h1>광주·전남 AWS 기상관측망 관리</h1>
+        <p>자동기상관측장비 위치·점검 현황</p>
+      </div>
+    </div>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <div id="app" class="loading">불러오는 중…</div>
+
+  <!-- ⑥ 하단 정보 -->
+  <footer>
+    <h3>문의 · 기관 정보</h3>
+    <dl style="margin:0">
+      <div class="foot-row"><dt>담당 부서</dt><dd>광주지방기상청 관측과 <span style="opacity:.6">(예시)</span></dd></div>
+      <div class="foot-row"><dt>연락처</dt><dd>000-0000-0000 <span style="opacity:.6">(예시)</span></dd></div>
+      <div class="foot-row"><dt>데이터 기준</dt><dd id="dataBase">-</dd></div>
+    </dl>
+    <p class="foot-note">
+      본 화면의 장비 정보는 <code>data/stations.csv</code> 파일을 읽어 표시합니다.<br>
+      경로 안내는 직선거리 기준의 <b>대략적인 순서</b>이며 실제 도로 상황과 다를 수 있습니다.
+    </p>
+  </footer>
+</div>
+
+<!-- 바텀시트 -->
+<div class="sheet-dim" id="dim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetName">
+  <button class="sheet-close" id="sheetClose" aria-label="닫기">✕</button>
+  <div class="grip"></div>
+  <div id="sheetBody"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* =========================================================
+   설정값 — 운영 전 이 부분만 실제 값으로 바꾸면 됩니다.
+   ========================================================= */
+const CONFIG = {
+  // ⚠️ 실제 사무실 좌표로 교체 필요 (④ 최적 경로의 출발·도착지)
+  office: { name: '사무실(임시)', lat: 35.1595, lon: 126.8526 },
+  maxPick: 8,        // 한 번에 고를 수 있는 장비 수
+  soonDays: 30,      // 예정일까지 이 일수 이내면 '곧 도래'
+  csvPath: 'data/stations.csv',
+  panoDir: 'panoramas/'
+};
+
+/* =========================================================
+   CSV를 못 읽을 때 쓰는 내장 샘플 (파일을 그냥 더블클릭해서 열었을 때)
+   ※ 실제 데이터는 항상 data/stations.csv 가 기준입니다.
+   ========================================================= */
+const FALLBACK_CSV = `station_id,name,lat,lon,address,last_check,cycle_months,panorama,note
+156,광주,35.1729,126.8916,광주 북구 운암동,2026-04-02,6,156.svg,관측노장 양호
+165,목포,34.8168,126.3812,전남 목포시 연산동,2026-06-19,6,,
+168,여수,34.7392,127.7407,전남 여수시 고소동,2026-01-08,6,,주변 수목 성장으로 시야 확인 필요
+169,흑산도,34.6841,125.4361,전남 신안군 흑산면,2026-04-22,3,,선박 이동 필요 · 기상 확인 후 출발
+170,완도,34.3110,126.7550,전남 완도군 완도읍,2026-02-14,6,,염해 점검 대상
+174,순천,35.0664,127.4872,전남 순천시 조례동,2026-05-06,6,,
+175,진도,34.4867,126.2634,전남 진도군 진도읍,2025-08-20,12,,
+260,장흥,34.6816,126.9070,전남 장흥군 장흥읍,2026-03-11,6,,
+261,해남,34.5735,126.5990,전남 해남군 해남읍,2025-11-27,12,,
+262,고흥,34.6111,127.2850,전남 고흥군 고흥읍,2026-06-05,6,,
+901,나주,35.0158,126.7108,전남 나주시 송월동,2026-05-18,3,,지점번호 확인 필요
+902,담양,35.3211,126.9881,전남 담양군 담양읍,2026-04-30,6,,지점번호 확인 필요
+903,구례,35.2025,127.4629,전남 구례군 구례읍,2025-06-25,12,,지점번호 확인 필요 · 접근로 비포장
+904,영광,35.2772,126.5120,전남 영광군 영광읍,2026-03-05,6,,지점번호 확인 필요
+905,강진,34.6420,126.7672,전남 강진군 강진읍,2026-01-30,6,,지점번호 확인 필요`;
+
+/* ========================= 아이콘 ========================= */
+const ICON = {
+  ok:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5.5 5.5L20 6"/></svg>',
+  soon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/></svg>',
+  due:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5L1.8 20.5h20.4z"/><path d="M12 10v4.5"/><circle cx="12" cy="17.6" r="1" fill="currentColor" stroke="none"/></svg>',
+  unknown:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.9 2.9 0 015.6 1c0 1.9-2.8 2.2-2.8 4"/><circle cx="12" cy="17.8" r="1" fill="currentColor" stroke="none"/></svg>',
+  nav:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L3 10.5l7.5 3L13.5 21z"/></svg>',
+  vr:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3.3 9.2h17.4M3.3 14.8h17.4"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5.5 5.5L20 6"/></svg>'
+};
+
+const STATUS = {
+  ok:      { key:'ok',      label:'정상',     cls:'b-ok',      pin:'pin-ok',      letter:'정' },
+  soon:    { key:'soon',    label:'곧 도래',  cls:'b-soon',    pin:'pin-soon',    letter:'곧' },
+  due:     { key:'due',     label:'점검필요', cls:'b-due',     pin:'pin-due',     letter:'!'  },
+  unknown: { key:'unknown', label:'정보 확인 필요', cls:'b-unknown', pin:'pin-unknown', letter:'?' }
+};
+
+/* ========================= 유틸 ========================= */
+function parseCSV(text){
+  const rows=[]; let row=[], field='', q=false;
+  text = text.replace(/^﻿/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else q=false; }
+      else field+=c;
+    }else{
+      if(c==='"') q=true;
+      else if(c===','){ row.push(field); field=''; }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else field+=c;
+    }
+  }
+  row.push(field); rows.push(row);
+  const clean=rows.filter(r=>r.some(v=>v.trim()!==''));
+  if(!clean.length) return [];
+  const head=clean[0].map(h=>h.trim());
+  return clean.slice(1).map(r=>{
+    const o={}; head.forEach((h,i)=>o[h]=(r[i]??'').trim()); return o;
+  });
+}
+
+function parseDate(s){
+  const m=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec((s||'').trim());
+  if(!m) return null;
+  const y=+m[1], mo=+m[2], d=+m[3];
+  const dt=new Date(y,mo-1,d);
+  if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d) return null;
+  return dt;
+}
+function addMonths(date, n){
+  const d=new Date(date.getTime());
+  const day=d.getDate();
+  d.setDate(1); d.setMonth(d.getMonth()+n);
+  const last=new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  d.setDate(Math.min(day,last));
+  return d;
+}
+function fmtDate(d){
+  if(!d) return '-';
+  return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+}
+function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+
+// 두 좌표 사이 직선거리(km) — 하버사인
+function distKm(a,b){
+  const R=6371, rad=Math.PI/180;
+  const dLat=(b.lat-a.lat)*rad, dLon=(b.lon-a.lon)*rad;
+  const s=Math.sin(dLat/2)**2 + Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function fmtKm(k){ return k<10 ? k.toFixed(1) : Math.round(k).toLocaleString('ko-KR'); }
+const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ========================= 상태 판정 ========================= */
+function buildStation(raw){
+  const lat=parseFloat(raw.lat), lon=parseFloat(raw.lon);
+  const last=parseDate(raw.last_check);
+  const cycle=parseInt(raw.cycle_months,10);
+  const s={
+    id: raw.station_id||'',
+    name: raw.name||'(이름 없음)',
+    lat, lon,
+    address: raw.address||'',
+    last, cycle: Number.isFinite(cycle)&&cycle>0 ? cycle : null,
+    panorama: raw.panorama||'',
+    note: raw.note||'',
+    valid: Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180
+  };
+  if(last && s.cycle){
+    s.next = addMonths(last, s.cycle);
+    s.days = Math.round((s.next - today0())/86400000);
+    s.status = s.days<0 ? STATUS.due : (s.days<=CONFIG.soonDays ? STATUS.soon : STATUS.ok);
+  }else{
+    s.next=null; s.days=null; s.status=STATUS.unknown;
+  }
+  return s;
+}
+
+/* ========================= 상태 저장소 ========================= */
+const state = { stations:[], filter:'all', query:'', mode:'all', listOpen:false,
+                picked:[], map:null, markers:{}, bounds:null, pano:null };
+
+// 검색 방식별 안내 문구
+const MODE_PLACEHOLDER = {
+  all:  '지점명 · 주소 · 번호 검색',
+  addr: '주소로 검색 (예: 목포시)',
+  id:   '관측장비번호로 검색 (예: 165)'
+};
+
+/* ========================= 화면 그리기 ========================= */
+function render(){
+  document.getElementById('app').className='';
+  document.getElementById('app').innerHTML = `
+  <!-- ③ 지도 + 목록 -->
+  <section>
+    <h2>지도 · 장비 목록</h2>
+    <p class="sec-desc">핀이나 목록을 누르면 상세 정보가 열립니다.</p>
+    <div id="map"></div>
+    <div class="map-fail" id="mapFail">지도를 불러오지 못했습니다. 아래 목록은 정상적으로 이용할 수 있습니다.</div>
+    <div class="tools">
+      <input class="search" id="q" type="search" placeholder="지점명 · 주소 · 번호 검색" autocomplete="off">
+      <button class="fitBtn" id="fitBtn" type="button">전체 보기</button>
+    </div>
+    <div class="chips" id="modes">
+      <button class="chip" data-m="all" aria-pressed="true">전체 검색</button>
+      <button class="chip" data-m="addr" aria-pressed="false">주소 검색</button>
+      <button class="chip" data-m="id" aria-pressed="false">관측장비번호</button>
+    </div>
+
+    <button class="list-toggle" id="listToggle" type="button" aria-expanded="false" aria-controls="listBox">
+      관측장비 목록 <span class="cnt" id="listCount"></span> <span class="caret">▼</span>
+    </button>
+    <div id="listBox" hidden>
+      <div class="chips" id="chips">
+        <button class="chip" data-f="all" aria-pressed="true">전체</button>
+        <button class="chip" data-f="due" aria-pressed="false">점검필요</button>
+        <button class="chip" data-f="soon" aria-pressed="false">곧 도래</button>
+        <button class="chip" data-f="ok" aria-pressed="false">정상</button>
+      </div>
+      <ul class="list" id="list"></ul>
+    </div>
+  </section>
+
+  <!-- ④ 경로 -->
+  <section id="routeSec">
+    <h2>하루 출장 경로</h2>
+    <p class="sec-desc">위 <b>관측장비 목록</b>을 펼친 뒤 <b>＋</b> 버튼으로 장비를 담으면 방문 순서를 계산합니다.</p>
+    <div class="route-box">
+      <p class="route-from">출발 · 도착 &nbsp;<b>${esc(CONFIG.office.name)}</b> (왕복 기준)</p>
+      <div class="picked-tags" id="tags"></div>
+      <button class="btn" id="calcBtn" disabled>장비를 담아주세요</button>
+      <p class="route-note">최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다. 직선거리 기준의 <b>대략적인 순서</b>이며, 실제 도로 거리와는 차이가 있습니다.</p>
+      <div class="route-result" id="routeResult"></div>
+    </div>
+  </section>
+
+  <!-- ⑤ VR -->
+  <section id="panoSec">
+    <h2>현장 둘러보기</h2>
+    <p class="sec-desc">현장에 가지 않고 장비 주변 환경(수목·건물 등 관측 방해 요소)을 미리 확인합니다.</p>
+    <p class="pano-pick" id="panoPick">선택된 장비: <b>없음</b></p>
+    <div id="panoWrap"></div>
+    <p class="pano-spec">촬영 규격 — 360° 파노라마(equirectangular), 가로:세로 <b>2:1</b>, JPG, 가로 <b>4096px 이상</b> 권장. 파일은 <code>panoramas/</code> 폴더에 두고 CSV의 <code>panorama</code> 칸에 파일명을 적습니다.</p>
+  </section>`;
+
+  bindEvents();
+  initMap();
+  renderList();
+  renderPano(null);
+}
+
+function badge(s){
+  return `<span class="badge ${s.status.cls}">${ICON[s.status.key]}${s.status.label}</span>`;
+}
+
+function visible(){
+  const q=state.query.trim().toLowerCase();
+  return state.stations.filter(s=>{
+    if(state.filter!=='all' && s.status.key!==state.filter) return false;
+    if(!q) return true;
+    const hay = state.mode==='addr' ? s.address
+              : state.mode==='id'   ? s.id
+              : (s.name+' '+s.address+' '+s.id);
+    return String(hay).toLowerCase().includes(q);
+  });
+}
+
+// 목록 접기/펴기
+function setListOpen(open){
+  state.listOpen=open;
+  document.getElementById('listBox').hidden=!open;
+  document.getElementById('listToggle').setAttribute('aria-expanded',String(open));
+}
+
+function renderList(){
+  const ul=document.getElementById('list');
+  const rows=visible();
+  document.getElementById('listCount').textContent=`${rows.length}곳`;
+  if(!rows.length){ ul.innerHTML=`<li class="empty">조건에 맞는 장비가 없습니다.</li>`; return; }
+  ul.innerHTML = rows.map(s=>{
+    const on=state.picked.includes(s.id);
+    const nextTxt = s.next
+      ? `다음 점검 <b>${fmtDate(s.next)}</b>` + (s.days<0 ? ` · <b style="color:var(--due)">${-s.days}일 경과</b>` : ` · ${s.days}일 남음`)
+      : `<b style="color:var(--unknown)">점검 정보 확인 필요</b>`;
+    return `<li class="item ${on?'picked':''}" data-id="${esc(s.id)}">
+      <button class="item-main" data-act="open" data-id="${esc(s.id)}">
+        <span class="item-top"><span class="item-name">${esc(s.name)}</span><span class="item-id">${esc(s.id)}</span>${badge(s)}</span>
+        <span class="item-addr">${esc(s.address)||'주소 없음'}</span>
+        <span class="item-next">${nextTxt}</span>
+      </button>
+      <button class="pick" data-act="pick" data-id="${esc(s.id)}" aria-pressed="${on}"
+        aria-label="${esc(s.name)} ${on?'경로에서 빼기':'경로에 담기'}" ${s.valid?'':'disabled'}>
+        ${on?ICON.check:ICON.plus}<span style="font-size:9.5px">${on?'담김':'담기'}</span>
+      </button>
+    </li>`;
+  }).join('');
+}
+
+/* ========================= 지도 ========================= */
+function initMap(){
+  const el=document.getElementById('map');
+  if(typeof L==='undefined'){
+    el.style.display='none';
+    document.getElementById('mapFail').style.display='block';
+    return;
+  }
+  const pts=state.stations.filter(s=>s.valid);
+  state.map=L.map(el,{scrollWheelZoom:false}).setView([36.4,127.9],6.4);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:18, attribution:'&copy; OpenStreetMap'
+  }).addTo(state.map);
+
+  // 사무실
+  L.marker([CONFIG.office.lat,CONFIG.office.lon],{
+    icon:L.divIcon({className:'',html:`<div class="pin" style="background:#0d2f5c"><span>본</span></div>`,iconSize:[28,28],iconAnchor:[14,26]})
+  }).addTo(state.map).bindTooltip(CONFIG.office.name);
+
+  pts.forEach(s=>{
+    const m=L.marker([s.lat,s.lon],{
+      icon:L.divIcon({className:'',html:`<div class="pin ${s.status.pin}"><span>${s.status.letter}</span></div>`,iconSize:[28,28],iconAnchor:[14,26]})
+    }).addTo(state.map);
+    m.on('click',()=>openSheet(s.id));
+    m.bindTooltip(`${s.name} · ${s.status.label}`);
+    state.markers[s.id]=m;
+  });
+  // 컨테이너 크기가 확정된 뒤 '한 번만' 범위를 맞춥니다.
+  // (fitBounds를 여러 번 겹쳐 부르면 타일 격자가 어긋나 지도 일부가 비어 보입니다)
+  state.bounds = pts.length ? L.latLngBounds(pts.map(s=>[s.lat,s.lon])).pad(0.12) : null;
+  setTimeout(()=>{
+    state.map.invalidateSize({animate:false});
+    if(state.bounds) state.map.fitBounds(state.bounds,{animate:false});
+  },80);
+
+  // 화면 회전·크기 변경 대응 (연속 호출은 묶어서 한 번만)
+  let rzT=null;
+  const onResize=()=>{ clearTimeout(rzT); rzT=setTimeout(()=>state.map.invalidateSize({animate:false}),150); };
+  if(window.ResizeObserver) new ResizeObserver(onResize).observe(el);
+  window.addEventListener('orientationchange',onResize);
+}
+
+/* ========================= 바텀시트 ========================= */
+function openSheet(id){
+  const s=state.stations.find(x=>x.id===id); if(!s) return;
+  // 핀이 몰려 있어도 어느 장비인지 보이도록 지도를 해당 위치로 옮깁니다.
+  if(state.map && s.valid) state.map.setView([s.lat,s.lon], Math.max(state.map.getZoom(), 11), {animate:true});
+  const navUrl = s.valid ? `https://map.kakao.com/link/to/${encodeURIComponent(s.name+' AWS')},${s.lat},${s.lon}` : null;
+  document.getElementById('sheetBody').innerHTML = `
+    <div class="sheet-head">
+      <h3 id="sheetName">${esc(s.name)}</h3>
+      ${badge(s)}
+    </div>
+    <p class="sheet-addr">${esc(s.address)||'주소 정보 없음'}</p>
+    <ul class="info">
+      <li><b>지점번호</b><span>${esc(s.id)||'-'}</span></li>
+      <li><b>마지막 점검</b><span>${fmtDate(s.last)}</span></li>
+      <li><b>점검 주기</b><span>${s.cycle?s.cycle+'개월':'-'}</span></li>
+      <li><b>다음 점검</b><span class="${s.status.key==='due'?'warn':''}">${fmtDate(s.next)}${
+        s.days!==null ? (s.days<0?` (${-s.days}일 경과)`:` (${s.days}일 남음)`) : ''}</span></li>
+      <li><b>좌표</b><span>${s.valid?`${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`:'확인 필요'}</span></li>
+      ${s.note?`<li><b>비고</b><span>${esc(s.note)}</span></li>`:''}
+    </ul>
+    <div class="sheet-btns">
+      ${navUrl?`<a class="btn" href="${navUrl}" target="_blank" rel="noopener">${ICON.nav} 길안내</a>`:''}
+      <button class="btn btn-ghost" data-act="pano" data-id="${esc(s.id)}">${ICON.vr} 현장 둘러보기</button>
+    </div>`;
+  document.getElementById('sheet').classList.add('show');
+  document.getElementById('dim').classList.add('show');
+}
+function closeSheet(){
+  document.getElementById('sheet').classList.remove('show');
+  document.getElementById('dim').classList.remove('show');
+}
+
+/* ========================= ④ 경로 계산 ========================= */
+function renderTags(){
+  const box=document.getElementById('tags');
+  const btn=document.getElementById('calcBtn');
+  box.innerHTML = state.picked.map(id=>{
+    const s=state.stations.find(x=>x.id===id);
+    return `<span class="tag">${esc(s.name)}<button data-act="unpick" data-id="${esc(id)}" aria-label="${esc(s.name)} 빼기">✕</button></span>`;
+  }).join('');
+  btn.disabled = state.picked.length===0;
+  btn.textContent = state.picked.length===0
+    ? '장비를 담아주세요'
+    : `${state.picked.length}곳 방문 순서 계산하기`;
+}
+
+function togglePick(id){
+  const s=state.stations.find(x=>x.id===id);
+  if(!s||!s.valid) return;
+  const i=state.picked.indexOf(id);
+  if(i>=0) state.picked.splice(i,1);
+  else{
+    if(state.picked.length>=CONFIG.maxPick){
+      alert(`한 번에 최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다.`);
+      return;
+    }
+    state.picked.push(id);
+  }
+  renderTags(); renderList();
+  document.getElementById('routeResult').classList.remove('show');
+}
+
+// 사무실 출발 → 선택 장비 전부 → 사무실 복귀. 최단 순서를 완전탐색으로 찾습니다.
+function bestRoute(list){
+  let best=null;
+  const perm=(arr,cur)=>{
+    if(!arr.length){
+      let total=0, prev=CONFIG.office;
+      const legs=[];
+      for(const s of cur){ const d=distKm(prev,s); legs.push(d); total+=d; prev=s; }
+      const back=distKm(prev,CONFIG.office); legs.push(back); total+=back;
+      if(!best||total<best.total) best={order:cur.slice(),legs,total};
+      return;
+    }
+    for(let i=0;i<arr.length;i++){
+      const rest=arr.slice(0,i).concat(arr.slice(i+1));
+      perm(rest, cur.concat(arr[i]));
+    }
+  };
+  perm(list,[]);
+  return best;
+}
+
+function calcRoute(){
+  const list=state.picked.map(id=>state.stations.find(x=>x.id===id)).filter(Boolean);
+  if(!list.length) return;
+  const r=bestRoute(list);
+  const box=document.getElementById('routeResult');
+  const steps = [
+    `<li class="step"><span class="step-no office">출</span><div class="step-body">
+       <div class="step-name">${esc(CONFIG.office.name)}</div><div class="step-meta">출발</div></div></li>`,
+    ...r.order.map((s,i)=>`<li class="step"><span class="step-no">${i+1}</span><div class="step-body">
+       <div class="step-name">${esc(s.name)} ${badge(s)}</div>
+       <div class="step-meta">직전 지점에서 약 ${fmtKm(r.legs[i])}km · ${esc(s.address)}</div></div></li>`),
+    `<li class="step"><span class="step-no office">복</span><div class="step-body">
+       <div class="step-name">${esc(CONFIG.office.name)}</div>
+       <div class="step-meta">복귀 · 약 ${fmtKm(r.legs[r.legs.length-1])}km</div></div></li>`
+  ].join('');
+  box.innerHTML = `
+    <div class="route-total"><span>총 이동거리 (직선 기준)</span><b>약 ${fmtKm(r.total)} km</b></div>
+    <ul class="steps">${steps}</ul>`;
+  box.classList.add('show');
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* ========================= ⑤ 파노라마 ========================= */
+function renderPano(s){
+  const wrap=document.getElementById('panoWrap');
+  const pick=document.getElementById('panoPick');
+  pick.innerHTML = `선택된 장비: <b>${s?esc(s.name):'없음'}</b>`;
+
+  if(!s || !s.panorama){
+    wrap.innerHTML = `<div class="pano-empty">
+      ${ICON.vr}
+      <b>${s?'촬영 예정입니다':'장비를 선택해 주세요'}</b>
+      <span>${s?'이 장비는 아직 파노라마 사진이 등록되지 않았습니다.':'장비 상세에서 “현장 둘러보기”를 누르면 여기에 표시됩니다.'}</span>
+    </div>`;
+    return;
+  }
+  wrap.innerHTML = `<div class="pano" id="pano"><div class="pano-hint" id="panoHint">← 좌우로 드래그해서 둘러보세요 →</div></div>`;
+  const el=document.getElementById('pano');
+  const img=new Image();
+  img.onload=()=>setupPano(el, CONFIG.panoDir+s.panorama);
+  img.onerror=()=>{ wrap.innerHTML=`<div class="pano-empty">${ICON.vr}<b>사진을 불러오지 못했습니다</b>
+    <span>panoramas/${esc(s.panorama)} 파일이 있는지 확인해 주세요.</span></div>`; };
+  img.src=CONFIG.panoDir+s.panorama;
+}
+
+function setupPano(el, src){
+  const ZOOM=2.0;                       // 화면 높이 대비 사진 확대 배율
+  const H=el.clientHeight;
+  const imgH=H*ZOOM, imgW=imgH*2;       // equirectangular 2:1
+  let x=-imgW*0.25, y=(H-imgH)/2;
+  el.style.backgroundImage=`url("${src}")`;
+  el.style.backgroundSize=`${imgW}px ${imgH}px`;
+  const apply=()=>{
+    x=((x%imgW)+imgW)%imgW-imgW;        // 좌우 무한 반복
+    y=Math.max(H-imgH, Math.min(0,y));
+    el.style.backgroundPosition=`${x}px ${y}px`;
+  };
+  apply();
+
+  let drag=false, sx=0, sy=0, ox=0, oy=0, moved=false;
+  const down=e=>{ drag=true; moved=false; el.classList.add('dragging');
+    const p=pt(e); sx=p.x; sy=p.y; ox=x; oy=y; };
+  const move=e=>{ if(!drag) return; const p=pt(e);
+    if(Math.abs(p.x-sx)>4){ moved=true; if(e.cancelable) e.preventDefault(); }
+    x=ox+(p.x-sx); y=oy+(p.y-sy); apply();
+    if(moved){ const h=document.getElementById('panoHint'); if(h) h.style.display='none'; } };
+  const up=()=>{ drag=false; el.classList.remove('dragging'); };
+  const pt=e=>e.touches?{x:e.touches[0].clientX,y:e.touches[0].clientY}:{x:e.clientX,y:e.clientY};
+
+  el.addEventListener('mousedown',down); el.addEventListener('touchstart',down,{passive:true});
+  window.addEventListener('mousemove',move); el.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('mouseup',up); el.addEventListener('touchend',up);
+}
+
+/* ========================= 이벤트 ========================= */
+function bindEvents(){
+  // 검색어 입력 — 입력이 있으면 목록을 자동으로 펼칩니다.
+  document.getElementById('q').addEventListener('input',e=>{
+    state.query=e.target.value;
+    renderList();
+    if(state.query.trim()) setListOpen(true);
+  });
+
+  // 검색 방식 (전체 / 주소 / 관측장비번호)
+  document.getElementById('modes').addEventListener('click',e=>{
+    const b=e.target.closest('.chip'); if(!b) return;
+    state.mode=b.dataset.m;
+    [...document.querySelectorAll('#modes .chip')].forEach(c=>c.setAttribute('aria-pressed', String(c===b)));
+    const q=document.getElementById('q');
+    q.placeholder=MODE_PLACEHOLDER[state.mode];
+    q.focus();
+    renderList();
+    if(state.query.trim()) setListOpen(true);
+  });
+
+  // 상태 필터
+  document.getElementById('chips').addEventListener('click',e=>{
+    const b=e.target.closest('.chip'); if(!b) return;
+    state.filter=b.dataset.f;
+    [...document.querySelectorAll('#chips .chip')].forEach(c=>c.setAttribute('aria-pressed', String(c===b)));
+    renderList();
+  });
+
+  // 목록 접기/펴기
+  document.getElementById('listToggle').addEventListener('click',()=>setListOpen(!state.listOpen));
+
+  // 지도 전체 보기
+  document.getElementById('fitBtn').addEventListener('click',()=>{
+    if(state.map && state.bounds) state.map.fitBounds(state.bounds);
+  });
+
+  document.getElementById('list').addEventListener('click',e=>{
+    const b=e.target.closest('[data-act]'); if(!b) return;
+    if(b.dataset.act==='open') openSheet(b.dataset.id);
+    if(b.dataset.act==='pick') togglePick(b.dataset.id);
+  });
+
+  document.getElementById('tags').addEventListener('click',e=>{
+    const b=e.target.closest('[data-act="unpick"]'); if(b) togglePick(b.dataset.id);
+  });
+
+  document.getElementById('calcBtn').addEventListener('click',calcRoute);
+  renderTags();
+}
+
+document.getElementById('dim').addEventListener('click',closeSheet);
+document.getElementById('sheetClose').addEventListener('click',closeSheet);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); });
+document.getElementById('sheetBody').addEventListener('click',e=>{
+  const b=e.target.closest('[data-act="pano"]'); if(!b) return;
+  const s=state.stations.find(x=>x.id===b.dataset.id);
+  closeSheet();
+  renderPano(s);
+  setTimeout(()=>document.getElementById('panoSec').scrollIntoView({behavior:'smooth',block:'start'}),150);
+});
+
+/* ========================= 시작 ========================= */
+function showBanner(html){
+  const b=document.getElementById('banner');
+  b.innerHTML=html; b.classList.add('show');
+}
+
+async function start(){
+  let text=null, fromFile=false, mtime=null;
+  try{
+    const res=await fetch(CONFIG.csvPath,{cache:'no-store'});
+    if(!res.ok) throw new Error(res.status);
+    text=await res.text();
+    fromFile=true;
+    mtime=res.headers.get('last-modified');
+  }catch(err){
+    text=FALLBACK_CSV;
+    showBanner(`⚠️ <b>내장 샘플 데이터로 표시 중입니다.</b><br>
+      파일을 직접 열면 브라우저 보안 정책상 <code>data/stations.csv</code>를 읽을 수 없습니다.
+      실제 데이터를 보려면 이 폴더에서 <code>python3 -m http.server 8000</code> 실행 후
+      <code>localhost:8000</code>으로 접속하세요.`);
+  }
+
+  const rows=parseCSV(text);
+  state.stations=rows.map(buildStation).filter(s=>s.id||s.name!=='(이름 없음)');
+
+  if(!state.stations.length){
+    document.getElementById('app').innerHTML=`<div class="empty" style="padding:60px 20px">
+      장비 데이터를 읽지 못했습니다.<br>data/stations.csv 파일을 확인해 주세요.</div>`;
+    return;
+  }
+
+  const base = fromFile && mtime ? new Date(mtime) : null;
+  document.getElementById('dataBase').textContent =
+    (base ? fmtDate(base) : fmtDate(today0())) + (fromFile ? ' (CSV 기준)' : ' (내장 샘플)');
+
+  render();
+}
+start();
+</script>
+</body>
+</html>
