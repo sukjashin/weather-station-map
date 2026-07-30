@@ -368,8 +368,8 @@ const CONFIG = {
   csvPath: 'data/stations.csv',
   panoDir: 'panoramas/',
 
-  // 길안내 버튼이 열 지도앱 — 'kakao' 또는 'naver'
-  navProvider: 'kakao',
+  // 길안내 버튼이 열 지도앱 — 'naver' 또는 'kakao'
+  navProvider: 'naver',
 
   /* 경로 거리 계산 방식
      'osrm'     : 도로 거리·소요시간을 외부 경로탐색 서버에서 받아옵니다 (기본, 키 불필요)
@@ -800,7 +800,7 @@ function openSheet(id){
   state.selected=id;
   syncMarkers();
   if(state.map && s.valid) state.map.setView([s.lat,s.lon], Math.max(state.map.getZoom(), 11), {animate:true});
-  const navUrl = s.valid ? `https://map.kakao.com/link/to/${encodeURIComponent(s.name+' AWS')},${s.lat},${s.lon}` : null;
+  const navUrl = s.valid ? navToLink(s) : null;
   document.getElementById('sheetBody').innerHTML = `
     <div class="sheet-head">
       <h3 id="sheetName">${esc(s.name)}</h3>
@@ -925,7 +925,7 @@ function bestRoute(m,pts){
   return best;
 }
 
-/* 길찾기에 넘길 검색어 — 지점명은 지도앱이 못 찾는 경우가 많아 주소를 씁니다.
+/* 길찾기에 넘길 검색어 — 주소로 찾는 지도앱(카카오)에서 씁니다.
    괄호 안 부연설명과 쉼표 뒤 지번은 검색을 방해해서 떼어냅니다.
    예) '전라남도 목포시 고하대로 815 (목포시 연산동 726-3 목포기상대)'
        → '전라남도 목포시 고하대로 815' */
@@ -935,19 +935,35 @@ function navQuery(p){
 }
 
 /* 길안내 링크 — 출발지·도착지를 모두 지정해 지도앱 길찾기를 엽니다.
-   지도앱을 바꾸려면 CONFIG.navProvider 한 줄만 고치면 됩니다. */
+   지도앱을 바꾸려면 CONFIG.navProvider 한 줄만 고치면 됩니다.
+
+   네이버지도는 위경도를 그대로 받아 검색 과정이 없습니다. 주소가 조금 부정확해도
+   정확한 지점으로 열리므로 기본값으로 씁니다.
+   카카오맵은 출발·도착 좌표를 함께 넘기는 공개 형식이 없어 주소 검색에 의존하며,
+   도착지를 무시하는 경우가 있습니다. */
 const NAV_LINK = {
-  // 카카오맵 길찾기 — 출발지/도착지를 주소로 검색합니다.
+  // 네이버지도 자동차 길찾기 — 경도,위도,이름 순서
+  naver: (f,t) =>
+    `https://map.naver.com/p/directions/`
+    + `${f.lon},${f.lat},${encodeURIComponent(f.name)},,/`
+    + `${t.lon},${t.lat},${encodeURIComponent(t.name)},,/-/car`,
+  // 카카오맵 길찾기 — 출발지/도착지를 주소로 검색
   kakao: (f,t) =>
     `https://map.kakao.com/?sName=${encodeURIComponent(navQuery(f))}`
-    + `&eName=${encodeURIComponent(navQuery(t))}`,
-  // 네이버지도 길찾기
-  naver: (f,t) =>
-    `https://map.naver.com/p/directions/-/-/-/car?c=&s=${encodeURIComponent(navQuery(f))}`
-    + `&e=${encodeURIComponent(navQuery(t))}`
+    + `&eName=${encodeURIComponent(navQuery(t))}`
 };
 function navLink(from,to){
-  return (NAV_LINK[CONFIG.navProvider] || NAV_LINK.kakao)(from,to);
+  return (NAV_LINK[CONFIG.navProvider] || NAV_LINK.naver)(from,to);
+}
+
+// 상세 카드용 — 출발지 없이 도착지만 지정합니다(현위치 출발).
+const NAV_TO = {
+  naver: t => `https://map.naver.com/p/directions/-/${t.lon},${t.lat},`
+            + `${encodeURIComponent(t.name)},,/-/car`,
+  kakao: t => `https://map.kakao.com/link/to/${encodeURIComponent(t.name)},${t.lat},${t.lon}`
+};
+function navToLink(to){
+  return (NAV_TO[CONFIG.navProvider] || NAV_TO.naver)(to);
 }
 
 function legRow(m,pts,leg){
