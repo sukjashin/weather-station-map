@@ -49,10 +49,21 @@ const FIXTURE_CSV = `station_id,name,lat,lon,address,last_check,cycle_months,pan
 908,<b>이스케이프</b>,35.16,126.96,광주 테스트,${iso(today)},6,,
 `;
 
+/* 해양장비 시험 데이터 — 선박·육상·업체 세 가지 접근 방식을 모두 담습니다. */
+const FIXTURE_MARINE = `station_id,name,kind,lat,lon,sea_area,access,port,port_address,port_lat,port_lon,boat_min,wave_limit,vendor,vendor_tel,last_check,cycle_months,photo,note
+22101,칠발도,부이,34.79300,125.77700,서해남부 먼바다,선박,목포항,전라남도 목포시 해안로 182,34.78500,126.37800,180,1.5,,,${iso(today)},12,,계류 점검 포함
+22103,신안,부이,34.68000,125.90000,서해남부 앞바다,선박,목포항,전라남도 목포시 해안로 182,34.78500,126.37800,120,2.0,,,${iso(today)},12,,
+22102,거문도,부이,34.00100,127.50000,남해서부 먼바다,선박,여수항,전라남도 여수시 종화동 458,34.73800,127.75200,240,1.5,,,${iso(today)},12,,
+22201,가거도등표,등표,34.05000,125.10000,서해남부 먼바다,업체,,,,,,1.0,해양장비유지보수(주),061-000-0000,${iso(today)},6,,업체 정기점검
+22301,목포항파고,파고,34.77000,126.36000,목포항,육상,,,,,,,,,${iso(today)},6,,방파제 끝단 도보 접근
+22401,여수연안방재,연안,34.74500,127.74000,여수 연안,육상,,,,,,,,,${iso(today)},6,,
+`;
+
 const FIX = await fsp.mkdtemp(path.join(os.tmpdir(), 'aws-fixture-'));
 await fsp.mkdir(path.join(FIX, 'data'), { recursive: true });
 await fsp.copyFile(path.join(ROOT, 'index.html'), path.join(FIX, 'index.html'));
 await fsp.writeFile(path.join(FIX, 'data', 'stations.csv'), FIXTURE_CSV);
+await fsp.writeFile(path.join(FIX, 'data', 'marine.csv'), FIXTURE_MARINE);
 
 /* ── 정적 서버 (저장소 루트 + /__fixture) ── */
 const MIME = { '.html': 'text/html; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
@@ -453,6 +464,100 @@ try {
       await p.close();
     }
   }
+  /* ───────── 11. 해양장비 탭 ───────── */
+  {
+    const p = await newPage();
+    await p.addInitScript({ path: path.join(ROOT, 'test', 'leaflet-stub.js') });
+    await stubOsrm(p, null);
+    await p.goto(`${BASE}/__fixture/index.html`); await ready(p);
+
+    eq('11-1 탭 두 개', await p.$$eval('#tabs .tab', ns => ns.map(n => n.textContent.trim())),
+      ['지상 AWS', '해양장비']);
+    await p.click('#tabs .tab[data-tab="marine"]'); await p.waitForTimeout(400);
+    eq('11-2 해양장비를 읽음', await p.evaluate(() => state.marine.length), 6);
+    eq('11-3 탭 전환 시 담은 목록 초기화', await p.evaluate(() => state.picked.length), 0);
+    ok('11-4 출항 계획 섹션으로 바뀜', !!(await p.$('#seaSec')) && (await p.$eval('#routeSec h2', n => n.textContent)) === '출항 계획');
+    eq('11-5 종류 필터가 실제 있는 종류만',
+      await p.$$eval('#kinds .chip', ns => ns.map(n => n.textContent.trim())),
+      ['전체 종류', '해양기상부이', '등표관측장비', '파고부이·파랑계', '연안·항만']);
+
+    await p.click('#listToggle'); await p.waitForTimeout(250);
+    eq('11-6 목록 건수', await p.$eval('#listCount', n => n.textContent), '6곳');
+    const kind = async k => { await p.click(`#kinds .chip[data-k="${k}"]`); await p.waitForTimeout(200); return p.$$eval('#list li.item', n => n.length); };
+    eq('11-7 종류 필터 부이', await kind('buoy'), 3);
+    eq('11-8 종류 필터 등표', await kind('light'), 1);
+    eq('11-9 종류 필터 전체', await kind('all'), 6);
+
+    const find = async q => { await p.fill('#q', q); await p.waitForTimeout(250); return p.$$eval('#list li.item', n => n.length); };
+    await p.click('#modes .chip[data-m="addr"]'); await p.waitForTimeout(150);
+    eq('11-10 해역·항구 검색 "목포항"', await find('목포항'), 3);   // 목포항 출항 2 + 해역이 목포항 1
+    eq('11-11 해역 검색 "남해서부"', await find('남해서부'), 1);
+    await p.click('#modes .chip[data-m="all"]'); await p.waitForTimeout(150);
+    await find('');
+
+    // 담기 → 출항 계획
+    for (const id of ['22101', '22103', '22201', '22301']) {
+      await p.locator(`#list li[data-id="${id}"] button.pick`).click(); await p.waitForTimeout(150);
+    }
+    eq('11-12 출항 조건은 선박 장비만 반영', await p.$eval('#waveWorst', n => n.textContent), '1.5m 이하');
+    eq('11-13 계산 버튼 문구', await p.$eval('#calcBtn', n => n.textContent.trim()), '4곳 출항 계획 짜기');
+
+    await p.click('#calcBtn'); await p.waitForSelector('.route-total', { timeout: 20000 }); await p.waitForTimeout(300);
+    const cards = await p.$$eval('.port-card .port-head b', ns => ns.map(n => n.textContent.trim()));
+    eq('11-14 같은 항구는 한 묶음, 육상은 따로', cards, ['목포항', '목포항파고']);
+    const txt = await p.$eval('#routeResult', n => n.innerText);
+    ok('11-15 업체 점검 장비는 일정에서 제외', txt.includes('업체 점검 장비 1곳') && txt.includes('가거도등표'), '');
+    ok('11-16 항구까지 도로 구간 표시', /광주지방기상청 → 목포항\s+도로 약/.test(txt.replace(/\n/g, ' ')), '');
+    ok('11-17 왕복 항해 시간 표시', txt.includes('왕복 항해 약 10시간'), '');
+    ok('11-18 육상 접근은 항해 표기 없음', txt.includes('차로 가서 걸어서 접근'), '');
+    ok('11-19 총계에 점검시간 제외 안내', txt.includes('점검 작업 시간과 대기 시간은 빠져 있습니다'), '');
+
+    const navs = await p.$$eval('.port-card .leg-nav', ns => ns.map(n => decodeURIComponent(n.getAttribute('href'))));
+    ok('11-20 항구 길안내는 항구 좌표로', navs[0].includes('126.378,34.785,목포항,,'), navs[0]);
+
+    // 지도 핀
+    const pins = await p.evaluate(() => window.__pins.map(x => (x.html.match(/class="pin ([^"]*)"/) || [])[1]));
+    eq('11-21 출항 항구 핀', pins.filter(c => c === 'pin-port').length, 1);
+    ok('11-22 사무실 핀', pins.includes('pin-office'));
+
+    // 상세
+    await p.locator('.port-list .step-link').first().click(); await p.waitForTimeout(500);
+    const sheet = await p.$eval('#sheetBody', n => n.innerText);
+    ok('11-23 상세에 접근 방식·항구·파고', sheet.includes('선박 출항') && sheet.includes('목포항 · 편도 약 3시간')
+      && sheet.includes('1.5m 이하'), sheet.replace(/\n/g, ' ').slice(0, 160));
+    ok('11-24 항구까지 길안내 버튼', (await p.$eval('.sheet-btns a', n => n.textContent)).includes('목포항까지 길안내'));
+    ok('11-25 해양에는 파노라마 버튼 없음', !(await p.$('#sheetBody [data-act="pano"]')));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(250);
+
+    // 업체 점검 장비 상세
+    await p.evaluate(() => setListOpen(true)); await p.waitForTimeout(200);
+    await p.locator('#list li[data-id="22201"] button.item-main').click(); await p.waitForTimeout(400);
+    const vend = await p.$eval('#sheetBody', n => n.innerText);
+    ok('11-26 업체 정보 표시', vend.includes('해양장비유지보수(주)') && vend.includes('061-000-0000'), '');
+    await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+
+    // 지상으로 되돌아가기
+    await p.click('#tabs .tab[data-tab="land"]'); await p.waitForTimeout(400);
+    ok('11-27 지상 탭 복귀', (await p.$eval('#routeSec h2', n => n.textContent)) === '하루 출장 경로');
+    ok('11-28 지상에는 종류 필터 없음', !(await p.$('#kinds')));
+    await p.close();
+  }
+
+  /* ───────── 12. 해양 자료가 없을 때 ───────── */
+  {
+    const p = await newPage();
+    await p.goto(`${BASE}/index.html`); await ready(p);   // 저장소의 marine.csv는 머리글만 있습니다
+    await p.click('#tabs .tab[data-tab="marine"]'); await p.waitForTimeout(400);
+    const t = await p.$eval('#app', n => n.innerText);
+    ok('12-1 빈 자료 안내', t.includes('등록된 해양장비가 없습니다'), t.split('\n')[1] || '');
+    ok('12-2 채워야 할 칸 안내', t.includes('boat_min') && t.includes('wave_limit') && t.includes('access'), '');
+    ok('12-3 자바스크립트 오류 없이 지상 복귀', await (async () => {
+      await p.click('#tabs .tab[data-tab="land"]'); await p.waitForTimeout(400);
+      return (await p.$$eval('#list li.item', n => n.length)) >= 0;
+    })());
+    await p.close();
+  }
+
 } finally {
   await browser.close();
   server.close();

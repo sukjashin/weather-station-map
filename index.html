@@ -57,6 +57,16 @@ header{
 header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-.5px}
 header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 
+/* ===== 지상 / 해양 탭 ===== */
+.tabs{
+  display:flex;gap:8px;padding:14px 18px 0;max-width:540px;margin:0 auto;
+}
+.tab{
+  flex:1;padding:11px 8px;border:1.5px solid var(--line);border-radius:11px;
+  background:#fff;color:var(--muted);font-size:14.5px;font-weight:700;cursor:pointer;
+}
+.tab[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+
 /* ===== 알림 배너 ===== */
 .banner{
   display:none;margin:0;padding:12px 18px;background:#fff6e5;
@@ -145,6 +155,7 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 /* 지도에 올라가는 핀 — 글씨 없이 색으로만 구분합니다 */
 .pin-pick{background:var(--blue)}                 /* 출장지로 담은 장비 */
 .pin-office{background:var(--navy)}               /* 사무실 */
+.pin-port{background:#0f8a8a}                     /* 출항 항구 */
 .pin-sel{                                         /* 지금 선택한 장비 */
   background:var(--navy);width:34px;height:34px;
   box-shadow:0 0 0 4px rgba(21,101,192,.28), 0 3px 8px rgba(0,0,0,.4);
@@ -235,6 +246,34 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
   background:var(--unknown-bg);color:var(--unknown);font-size:12.5px;
 }
 
+/* ===== 해양장비 ===== */
+.empty-guide{
+  border:1px dashed var(--line);border-radius:var(--radius);background:var(--bg);
+  padding:20px 18px;font-size:13.5px;line-height:1.6;color:var(--muted);
+}
+.empty-guide b{display:block;color:var(--ink);font-size:15px;margin-bottom:8px}
+.empty-guide p{margin:0 0 12px}
+.col-help{margin:0;padding-left:18px}
+.col-help li{margin-bottom:3px}
+.col-help code{font-size:12px}
+.sea-box{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:15px}
+.sea-box .info{margin-bottom:12px}
+.port-card{
+  background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:13px 14px;margin-top:12px;
+}
+.port-head{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+.port-head b{font-size:15.5px}
+.port-cnt{font-size:12.5px;color:var(--muted)}
+.port-list{list-style:none;margin:10px 0 0;padding:0}
+.port-list li{padding:9px 0;border-top:1px solid var(--line)}
+.port-meta{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+.port-foot{
+  margin-top:10px;padding-top:9px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--muted);
+}
+.port-foot b{color:var(--ink)}
+
 /* ===== ⑤ 파노라마 ===== */
 .pano-pick{font-size:13.5px;color:var(--muted);margin:0 0 10px}
 .pano-pick b{color:var(--ink)}
@@ -322,6 +361,12 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
     </div>
   </header>
 
+  <!-- 지상 / 해양 전환 -->
+  <nav class="tabs" id="tabs" aria-label="장비 종류">
+    <button class="tab" data-tab="land" aria-pressed="true">지상 AWS</button>
+    <button class="tab" data-tab="marine" aria-pressed="false">해양장비</button>
+  </nav>
+
   <div class="banner" id="banner"></div>
 
   <div id="app" class="loading">불러오는 중…</div>
@@ -335,7 +380,7 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
       <div class="foot-row"><dt>데이터 기준</dt><dd id="dataBase">-</dd></div>
     </dl>
     <p class="foot-note">
-      본 화면의 장비 정보는 <code>data/stations.csv</code> 파일을 읽어 표시합니다.<br>
+      장비 정보는 <code>data/stations.csv</code>(지상)와 <code>data/marine.csv</code>(해양) 파일을 읽어 표시합니다.<br>
       경로 거리·시간은 도로 기준으로 계산하지만 <b>실시간 교통 상황은 반영되지 않습니다</b>.
     </p>
   </footer>
@@ -366,7 +411,12 @@ const CONFIG = {
   maxPick: 8,        // 한 번에 고를 수 있는 장비 수
   soonDays: 30,      // 예정일까지 이 일수 이내면 '곧 도래'
   csvPath: 'data/stations.csv',
+  marineCsvPath: 'data/marine.csv',   // 해양장비 (파일이 없으면 해양 탭에 안내만 뜹니다)
   panoDir: 'panoramas/',
+  photoDir: 'photos/',                // 해양장비 사진 폴더
+
+  // 해상 기상 확인용 링크 — 출항 전 파고·풍속 확인
+  seaForecastUrl: 'https://www.weather.go.kr/w/ocean/marine/forecast.do',
 
   // 길안내 버튼이 열 지도앱 — 'naver' 또는 'kakao'
   navProvider: 'naver',
@@ -601,20 +651,84 @@ function buildStation(raw){
   return s;
 }
 
+/* 해양장비 한 줄을 화면에서 쓸 형태로 만듭니다.
+   점검일·주기로 상태를 매기는 부분은 지상 장비와 같습니다. */
+function buildMarine(raw){
+  const s=buildStation(raw);
+  const portLat=parseFloat(raw.port_lat), portLon=parseFloat(raw.port_lon);
+  const boat=parseInt(raw.boat_min,10);
+  const wave=parseFloat(raw.wave_limit);
+  s.kind   = KIND[KIND_ALIAS[(raw.kind||'').trim()]] || KIND.etc;
+  s.access = ACCESS[ACCESS_ALIAS[(raw.access||'').trim()]] || ACCESS.boat;
+  s.seaArea= raw.sea_area||'';
+  s.port   = raw.port||'';
+  s.portPt = Number.isFinite(portLat)&&Number.isFinite(portLon)
+             ? { name:s.port||'출항 항구', lat:portLat, lon:portLon, address:raw.port_address||'' } : null;
+  s.boatMin= Number.isFinite(boat)&&boat>0 ? boat : null;
+  s.wave   = Number.isFinite(wave)&&wave>0 ? wave : null;
+  s.vendor = raw.vendor||'';
+  s.vendorTel = raw.vendor_tel||'';
+  s.photo  = raw.photo||'';
+  /* 출항 계획에서 묶는 기준 —
+     선박은 같은 항구끼리 한 번에 나가므로 항구로 묶고,
+     육상 접근은 각자 다른 곳으로 차를 몰고 가므로 장비별로 따로 둡니다. */
+  s.group      = s.access.key==='boat' ? `port:${s.port||'미지정'}` : `land:${s.id}`;
+  s.groupLabel = s.access.key==='boat' ? (s.port||'출항 항구 미지정') : s.name;
+  return s;
+}
+
 /* ========================= 상태 저장소 ========================= */
-const state = { stations:[], filter:'all', query:'', mode:'all', listOpen:false,
+const state = { tab:'land',
+                stations:[], marine:[], marineLoaded:false,
+                filter:'all', kind:'all', query:'', mode:'all', listOpen:false,
                 picked:[], selected:null,
                 map:null, markerLayer:null, markers:{}, bounds:null, pano:null };
 
+// 지금 탭에서 다루는 장비 목록
+function items(){ return state.tab==='marine' ? state.marine : state.stations; }
+
+/* 해양장비 종류·접근 방식 */
+const KIND = {
+  buoy:    { key:'buoy',    label:'해양기상부이' },
+  light:   { key:'light',   label:'등표관측장비' },
+  wave:    { key:'wave',    label:'파고부이·파랑계' },
+  coast:   { key:'coast',   label:'연안·항만' },
+  etc:     { key:'etc',     label:'기타' }
+};
+const KIND_ALIAS = {
+  '부이':'buoy','해양기상부이':'buoy','buoy':'buoy',
+  '등표':'light','등표기상관측장비':'light','등대':'light','light':'light',
+  '파고':'wave','파고부이':'wave','파랑계':'wave','wave':'wave',
+  '연안':'coast','항만':'coast','연안방재':'coast','coast':'coast'
+};
+const ACCESS = {
+  boat:   { key:'boat',   label:'선박 출항',   desc:'배를 타고 나가야 합니다' },
+  land:   { key:'land',   label:'육상 접근',   desc:'차로 가서 걸어서 접근합니다' },
+  vendor: { key:'vendor', label:'업체 점검',   desc:'유지보수 업체가 수행합니다' }
+};
+const ACCESS_ALIAS = {
+  '선박':'boat','배':'boat','출항':'boat','boat':'boat',
+  '육상':'land','도보':'land','차량':'land','land':'land',
+  '업체':'vendor','용역':'vendor','외주':'vendor','vendor':'vendor'
+};
+
 // 검색 방식별 안내 문구
 const MODE_PLACEHOLDER = {
-  all:  '지점명 · 주소 · 번호 검색',
-  addr: '주소로 검색 (예: 목포시)',
-  id:   '관측장비번호로 검색 (예: 165)'
+  land: {
+    all:  '지점명 · 주소 · 번호 검색',
+    addr: '주소로 검색 (예: 목포시)',
+    id:   '관측장비번호로 검색 (예: 165)'
+  },
+  marine: {
+    all:  '지점명 · 해역 · 항구 · 번호 검색',
+    addr: '해역이나 출항 항구로 검색 (예: 목포항)',
+    id:   '관측장비번호로 검색'
+  }
 };
 
 /* ========================= 화면 그리기 ========================= */
 function render(){
+  if(state.tab==='marine') return renderMarine();
   document.getElementById('app').className='';
   document.getElementById('app').innerHTML = `
   <!-- ③ 지도 + 목록 -->
@@ -679,18 +793,131 @@ function render(){
   renderPano(null);
 }
 
+/* ========================= 해양장비 화면 ========================= */
+function renderMarine(){
+  const app=document.getElementById('app');
+  app.className='';
+
+  if(!state.marine.length){
+    app.innerHTML=`<section><h2>해양장비 점검</h2>
+      <div class="empty-guide">
+        <b>${state.marineLoaded?'등록된 해양장비가 없습니다.':'해양장비 자료를 읽지 못했습니다.'}</b>
+        <p><code>data/marine.csv</code>를 만들고 아래 칸을 채우면 이 화면에 나타납니다.
+           엑셀로 열어 수정한 뒤 <b>UTF-8 CSV</b>로 저장하세요.</p>
+        <ul class="col-help">
+          <li><code>station_id</code> 관측장비번호 · <code>name</code> 지점명</li>
+          <li><code>kind</code> 부이 / 등표 / 파고 / 연안</li>
+          <li><code>lat</code>, <code>lon</code> 장비 좌표 · <code>sea_area</code> 해역</li>
+          <li><code>access</code> 선박 / 육상 / 업체</li>
+          <li><code>port</code>, <code>port_lat</code>, <code>port_lon</code> 출항 항구와 좌표</li>
+          <li><code>boat_min</code> 항구에서 편도 항해 시간(분)</li>
+          <li><code>wave_limit</code> 점검 가능 파고(m)</li>
+          <li><code>vendor</code>, <code>vendor_tel</code> 유지보수 업체·연락처</li>
+          <li><code>last_check</code>, <code>cycle_months</code> 점검일·주기</li>
+          <li><code>photo</code> 사진 파일명 · <code>note</code> 비고</li>
+        </ul>
+      </div></section>`;
+    return;
+  }
+
+  app.innerHTML = `
+  <section>
+    <h2>지도 · 해양장비 목록</h2>
+    <p class="sec-desc">목록에서 장비를 누르면 지도에 위치가 표시됩니다.
+      <b>＋ 담기</b>로 고른 점검 대상도 함께 핀으로 보입니다.</p>
+    <div id="map"></div>
+    <div class="map-fail" id="mapFail">지도를 불러오지 못했습니다. 아래 목록은 정상적으로 이용할 수 있습니다.</div>
+    <div class="tools">
+      <input class="search" id="q" type="search" placeholder="지점명 · 해역 · 항구 · 번호 검색" autocomplete="off">
+      <button class="fitBtn" id="fitBtn" type="button">전체 보기</button>
+    </div>
+    <div class="chips" id="modes">
+      <button class="chip" data-m="all" aria-pressed="true">전체 검색</button>
+      <button class="chip" data-m="addr" aria-pressed="false">해역 · 항구</button>
+      <button class="chip" data-m="id" aria-pressed="false">관측장비번호</button>
+    </div>
+
+    <button class="list-toggle" id="listToggle" type="button" aria-expanded="false" aria-controls="listBox">
+      해양장비 목록 <span class="cnt" id="listCount"></span> <span class="caret">▼</span>
+    </button>
+    <div id="listBox" hidden>
+      <div class="chips" id="kinds">
+        <button class="chip" data-k="all" aria-pressed="true">전체 종류</button>
+        ${Object.values(KIND).filter(k=>state.marine.some(s=>s.kind.key===k.key))
+          .map(k=>`<button class="chip" data-k="${k.key}" aria-pressed="false">${k.label}</button>`).join('')}
+      </div>
+      <div class="chips" id="chips">
+        <button class="chip" data-f="all" aria-pressed="true">전체 상태</button>
+        <button class="chip" data-f="due" aria-pressed="false">점검필요</button>
+        <button class="chip" data-f="soon" aria-pressed="false">곧 도래</button>
+        <button class="chip" data-f="ok" aria-pressed="false">정상</button>
+      </div>
+      <ul class="list" id="list"></ul>
+    </div>
+  </section>
+
+  <section id="routeSec">
+    <h2>출항 계획</h2>
+    <p class="sec-desc">담은 장비를 <b>출항 항구별로 묶어</b> 하루 일정을 잡습니다.
+      배는 하루에 한 번 띄우는 것을 기준으로 했습니다.</p>
+    <div class="route-box">
+      <p class="route-from">육상 출발 &nbsp;<b>${esc(CONFIG.office.name)}</b></p>
+      <div class="picked-tags" id="tags"></div>
+      <button class="btn" id="calcBtn" disabled>장비를 담아주세요</button>
+      <p class="route-note">최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다.
+        사무실에서 <b>항구까지는 도로 기준</b>, <b>항구에서 장비까지는 CSV의 항해 시간</b>으로 계산합니다.
+        업체가 점검하는 장비는 일정에서 빼고 따로 표시합니다.</p>
+      <div class="route-result" id="routeResult"></div>
+    </div>
+  </section>
+
+  <section id="seaSec">
+    <h2>출항 전 확인</h2>
+    <p class="sec-desc">해양장비 점검은 파고·풍속 조건이 맞아야 나갈 수 있습니다.</p>
+    <div class="sea-box">
+      <ul class="info">
+        <li><b>담은 장비 중 가장 낮은 파고 조건</b><span id="waveWorst">-</span></li>
+      </ul>
+      <a class="btn btn-ghost" href="${CONFIG.seaForecastUrl}" target="_blank" rel="noopener">해상 예보 확인</a>
+      <p class="route-note">파고 조건은 CSV의 <code>wave_limit</code> 값입니다.
+        실제 출항 여부는 예보와 선박 운항 상황을 함께 확인하고 판단하세요.</p>
+    </div>
+  </section>`;
+
+  bindEvents();
+  initMap();
+  renderList();
+  updateWaveWorst();
+}
+
+/* 담은 장비 중 가장 까다로운 파고 조건.
+   업체가 점검하는 장비는 우리가 배를 띄우지 않으므로 셈에서 뺍니다. */
+function updateWaveWorst(){
+  const el=document.getElementById('waveWorst'); if(!el) return;
+  const sail=state.picked.map(id=>state.marine.find(s=>s.id===id))
+    .filter(s=>s && s.access.key==='boat');
+  const waves=sail.map(s=>s.wave).filter(w=>w!=null);
+  el.textContent = !sail.length ? '선박으로 나가는 장비 없음'
+    : waves.length ? `${Math.min(...waves)}m 이하`
+    : '자료 없음';
+}
+
 function badge(s){
   return `<span class="badge ${s.status.cls}">${ICON[s.status.key]}${s.status.label}</span>`;
 }
 
 function visible(){
   const q=state.query.trim().toLowerCase();
-  return state.stations.filter(s=>{
+  const marine=state.tab==='marine';
+  return items().filter(s=>{
     if(state.filter!=='all' && s.status.key!==state.filter) return false;
+    if(marine && state.kind!=='all' && s.kind.key!==state.kind) return false;
     if(!q) return true;
-    const hay = state.mode==='addr' ? s.address
+    // 해양은 '주소 검색' 자리를 해역·항구 검색으로 씁니다.
+    const where = marine ? `${s.seaArea} ${s.port} ${s.address}` : s.address;
+    const hay = state.mode==='addr' ? where
               : state.mode==='id'   ? s.id
-              : (s.name+' '+s.address+' '+s.id);
+              : (s.name+' '+where+' '+s.id);
     return String(hay).toLowerCase().includes(q);
   });
 }
@@ -712,10 +939,16 @@ function renderList(){
     const nextTxt = s.next
       ? `다음 점검 <b>${fmtDate(s.next)}</b>` + (s.days<0 ? ` · <b style="color:var(--due)">${-s.days}일 경과</b>` : ` · ${s.days}일 남음`)
       : `<b style="color:var(--unknown)">점검 정보 확인 필요</b>`;
+    // 해양은 주소 대신 종류·해역·접근 방식을 보여줍니다.
+    const sub = state.tab==='marine'
+      ? `${esc(s.kind.label)} · ${esc(s.access.label)}`
+        + (s.seaArea?` · ${esc(s.seaArea)}`:'')
+        + (s.port?` · 출항 ${esc(s.port)}`:'')
+      : esc(s.address)||'주소 없음';
     return `<li class="item ${on?'picked':''}" data-id="${esc(s.id)}">
       <button class="item-main" data-act="open" data-id="${esc(s.id)}">
         <span class="item-top"><span class="item-name">${esc(s.name)}</span><span class="item-id">${esc(s.id)}</span>${badge(s)}</span>
-        <span class="item-addr">${esc(s.address)||'주소 없음'}</span>
+        <span class="item-addr">${sub}</span>
         <span class="item-next">${nextTxt}</span>
       </button>
       <button class="pick" data-act="pick" data-id="${esc(s.id)}" aria-pressed="${on}"
@@ -779,13 +1012,24 @@ function syncMarkers(){
   // 출장지를 담았을 때만 사무실(출발·도착지)을 함께 보여줍니다.
   if(state.picked.length) put(CONFIG.office.lat, CONFIG.office.lon, 'pin-office', CONFIG.office.name, null, 28);
 
-  for(const id of state.picked){
-    if(id===state.selected) continue;                 // 선택 핀으로 대신 표시
-    const s=state.stations.find(x=>x.id===id);
-    if(s && s.valid) state.markers[id]=put(s.lat,s.lon,'pin-pick',`${s.name} · 출장지`,()=>openSheet(s.id),28);
+  // 해양 탭에서는 담은 장비의 출항 항구도 함께 보여줍니다.
+  if(state.tab==='marine'){
+    const seen=new Set();
+    for(const id of state.picked){
+      const s=state.marine.find(x=>x.id===id);
+      if(!s || !s.portPt || seen.has(s.port)) continue;
+      seen.add(s.port);
+      put(s.portPt.lat, s.portPt.lon, 'pin-port', `${s.port} · 출항 항구`, null, 26);
+    }
   }
 
-  const sel=state.stations.find(x=>x.id===state.selected);
+  for(const id of state.picked){
+    if(id===state.selected) continue;                 // 선택 핀으로 대신 표시
+    const s=items().find(x=>x.id===id);
+    if(s && s.valid) state.markers[id]=put(s.lat,s.lon,'pin-pick',`${s.name} · 점검 대상`,()=>openSheet(s.id),28);
+  }
+
+  const sel=items().find(x=>x.id===state.selected);
   if(sel && sel.valid){
     const picked=state.picked.includes(sel.id);
     state.markers[sel.id]=put(sel.lat,sel.lon,'pin-sel',
@@ -795,31 +1039,55 @@ function syncMarkers(){
 
 /* ========================= 바텀시트 ========================= */
 function openSheet(id){
-  const s=state.stations.find(x=>x.id===id); if(!s) return;
+  const s=items().find(x=>x.id===id); if(!s) return;
+  const marine=state.tab==='marine';
   // 선택한 장비를 지도에 핀으로 띄우고 그 위치로 옮깁니다.
   state.selected=id;
   syncMarkers();
   if(state.map && s.valid) state.map.setView([s.lat,s.lon], Math.max(state.map.getZoom(), 11), {animate:true});
-  const navUrl = s.valid ? navToLink(s) : null;
-  document.getElementById('sheetBody').innerHTML = `
-    <div class="sheet-head">
-      <h3 id="sheetName">${esc(s.name)}</h3>
-      ${badge(s)}
-    </div>
-    <p class="sheet-addr">${esc(s.address)||'주소 정보 없음'}</p>
-    <ul class="info">
+
+  const common = `
       <li><b>지점번호</b><span>${esc(s.id)||'-'}</span></li>
       <li><b>마지막 점검</b><span>${fmtDate(s.last)}</span></li>
       <li><b>점검 주기</b><span>${s.cycle?s.cycle+'개월':'-'}</span></li>
       <li><b>다음 점검</b><span class="${s.status.key==='due'?'warn':''}">${fmtDate(s.next)}${
         s.days!==null ? (s.days<0?` (${-s.days}일 경과)`:` (${s.days}일 남음)`) : ''}</span></li>
-      <li><b>좌표</b><span>${s.valid?`${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`:'확인 필요'}</span></li>
-      ${s.note?`<li><b>비고</b><span>${esc(s.note)}</span></li>`:''}
-    </ul>
-    <div class="sheet-btns">
+      <li><b>좌표</b><span>${s.valid?`${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`:'확인 필요'}</span></li>`;
+
+  let info, subtitle, buttons;
+  if(marine){
+    subtitle = [s.kind.label, s.seaArea].filter(Boolean).join(' · ') || '해양장비';
+    info = `
+      <li><b>접근 방식</b><span>${esc(s.access.label)}</span></li>
+      ${s.port?`<li><b>출항 항구</b><span>${esc(s.port)}${s.boatMin?` · 편도 약 ${fmtMin(s.boatMin)}`:''}</span></li>`:''}
+      ${s.wave?`<li><b>점검 가능 파고</b><span>${s.wave}m 이하</span></li>`:''}
+      ${common}
+      ${s.vendor?`<li><b>유지보수 업체</b><span>${esc(s.vendor)}${s.vendorTel?` · ${esc(s.vendorTel)}`:''}</span></li>`:''}
+      ${s.note?`<li><b>비고</b><span>${esc(s.note)}</span></li>`:''}`;
+    // 육상 접근이면 장비까지, 배로 가면 출항 항구까지 길을 안내합니다.
+    const target = s.access.key==='land' ? (s.valid?s:null) : s.portPt;
+    buttons = `
+      ${target?`<a class="btn" href="${navToLink(target)}" target="_blank" rel="noopener">${ICON.nav}
+        ${s.access.key==='land'?'길안내 (현위치 출발)':`${esc(s.port||'항구')}까지 길안내`}</a>`:''}
+      ${s.photo?`<a class="btn btn-ghost" href="${CONFIG.photoDir}${encodeURIComponent(s.photo)}"
+        target="_blank" rel="noopener">${ICON.vr} 장비 사진</a>`:''}`;
+  }else{
+    subtitle = esc(s.address)||'주소 정보 없음';
+    info = `${common}${s.note?`<li><b>비고</b><span>${esc(s.note)}</span></li>`:''}`;
+    const navUrl = s.valid ? navToLink(s) : null;
+    buttons = `
       ${navUrl?`<a class="btn" href="${navUrl}" target="_blank" rel="noopener">${ICON.nav} 길안내 (현위치 출발)</a>`:''}
-      <button class="btn btn-ghost" data-act="pano" data-id="${esc(s.id)}">${ICON.vr} 현장 둘러보기</button>
-    </div>`;
+      <button class="btn btn-ghost" data-act="pano" data-id="${esc(s.id)}">${ICON.vr} 현장 둘러보기</button>`;
+  }
+
+  document.getElementById('sheetBody').innerHTML = `
+    <div class="sheet-head">
+      <h3 id="sheetName">${esc(s.name)}</h3>
+      ${badge(s)}
+    </div>
+    <p class="sheet-addr">${subtitle}</p>
+    <ul class="info">${info}</ul>
+    <div class="sheet-btns">${buttons}</div>`;
   document.getElementById('sheet').classList.add('show');
   document.getElementById('dim').classList.add('show');
 }
@@ -833,17 +1101,19 @@ function renderTags(){
   const box=document.getElementById('tags');
   const btn=document.getElementById('calcBtn');
   box.innerHTML = state.picked.map(id=>{
-    const s=state.stations.find(x=>x.id===id);
+    const s=items().find(x=>x.id===id);
     return `<span class="tag">${esc(s.name)}<button data-act="unpick" data-id="${esc(id)}" aria-label="${esc(s.name)} 빼기">✕</button></span>`;
   }).join('');
   btn.disabled = state.picked.length===0;
   btn.textContent = state.picked.length===0
     ? '장비를 담아주세요'
-    : `${state.picked.length}곳 방문 순서 계산하기`;
+    : state.tab==='marine'
+      ? `${state.picked.length}곳 출항 계획 짜기`
+      : `${state.picked.length}곳 방문 순서 계산하기`;
 }
 
 function togglePick(id){
-  const s=state.stations.find(x=>x.id===id);
+  const s=items().find(x=>x.id===id);
   if(!s||!s.valid) return;
   const i=state.picked.indexOf(id);
   if(i>=0) state.picked.splice(i,1);
@@ -854,7 +1124,7 @@ function togglePick(id){
     }
     state.picked.push(id);
   }
-  renderTags(); renderList(); syncMarkers();
+  renderTags(); renderList(); syncMarkers(); updateWaveWorst();
   document.getElementById('routeResult').classList.remove('show');
 }
 
@@ -981,7 +1251,95 @@ function legRow(m,pts,leg){
   </div>`;
 }
 
+/* 해양 — 출항 항구별로 묶어 하루 일정을 만듭니다.
+   사무실→항구는 도로 기준, 항구→장비는 CSV의 항해 시간을 씁니다. */
+async function calcSailing(){
+  const list=state.picked.map(id=>state.marine.find(x=>x.id===id)).filter(Boolean);
+  if(!list.length) return;
+  const box=document.getElementById('routeResult');
+  const btn=document.getElementById('calcBtn');
+  box.innerHTML=`<div class="route-loading">항구까지 도로 경로를 계산하는 중입니다…</div>`;
+  box.classList.add('show');
+  btn.disabled=true;
+
+  // 업체 점검 장비는 일정에서 빼고 따로 알립니다.
+  const byVendor=list.filter(s=>s.access.key==='vendor');
+  const mine=list.filter(s=>s.access.key!=='vendor');
+
+  // 출항 항구(또는 '육상 접근')별로 묶습니다.
+  const groups=new Map();
+  for(const s of mine){
+    if(!groups.has(s.group)) groups.set(s.group,{name:s.groupLabel, items:[], start:null, boat:s.access.key==='boat'});
+    const g=groups.get(s.group);
+    g.items.push(s);
+    // 육상 접근은 장비 자체가, 선박은 항구가 육상 목적지입니다.
+    if(!g.start) g.start = s.access.key==='boat' ? s.portPt : (s.valid?s:null);
+  }
+
+  // 사무실 → 각 그룹 육상 목적지까지 한 번에 계산
+  const starts=[...groups.values()].map(g=>g.start).filter(Boolean);
+  const pts=[CONFIG.office, ...starts];
+  const m=starts.length ? await roadMatrix(pts) : {mode:'straight',dist:[[0]],dur:[[null]]};
+
+  btn.disabled=false; renderTags();
+
+  let idx=0, totalMin=0, totalKm=0;
+  const cards=[...groups.values()].map(g=>{
+    let drive=null;
+    if(g.start){
+      idx++;
+      drive=legInfo(m,pts,0,idx);
+      totalKm+=drive.km*2;                       // 왕복
+      totalMin+=drive.min*2;
+    }
+    const sail=g.items.reduce((a,s)=>a+(s.boatMin||0),0)*2;   // 왕복 항해
+    totalMin+=sail;
+    const waves=g.items.map(s=>s.wave).filter(w=>w!=null);
+
+    return `<div class="port-card">
+      <div class="port-head">
+        <b>${esc(g.name)}</b>
+        <span class="port-cnt">${g.items.length}곳</span>
+      </div>
+      ${g.start?`<div class="leg">
+        <span class="leg-path">${esc(CONFIG.office.name)} <b>→</b> ${esc(g.start.name)}</span>
+        <span class="leg-dist${drive.road?'':' straight'}">${drive.road?'도로':'직선'} 약 ${fmtKm(drive.km)}km
+          · ${drive.road?'약':'예상'} ${fmtMin(drive.min)}</span>
+        <a class="leg-nav" href="${navLink(CONFIG.office,g.start)}" target="_blank" rel="noopener">${ICON.nav} 길안내</a>
+      </div>`:`<div class="leg"><span class="leg-warn">항구 좌표가 없어 육상 경로를 계산하지 못했습니다.</span></div>`}
+      <ul class="port-list">
+        ${g.items.map(s=>`<li>
+          <button class="step-link" data-act="open" data-id="${esc(s.id)}">
+            <span class="step-name">${esc(s.name)}</span>${badge(s)}<span class="step-more">현황 보기</span>
+          </button>
+          <span class="port-meta">${esc(s.kind.label)}${
+            s.boatMin?` · 편도 항해 약 ${fmtMin(s.boatMin)}`:' · 항해 시간 미입력'}${
+            s.wave?` · 파고 ${s.wave}m 이하`:''}</span>
+        </li>`).join('')}
+      </ul>
+      <div class="port-foot">
+        ${g.boat?`왕복 항해 약 ${fmtMin(sail)}`:'차로 가서 걸어서 접근'}
+        ${g.boat&&waves.length?` · 출항 조건 <b>파고 ${Math.min(...waves)}m 이하</b>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  box.innerHTML = `
+    ${m.error?`<div class="route-warn">항구까지 도로 거리를 가져오지 못해 <b>직선거리</b>로 계산했습니다. (${esc(m.error)})</div>`:''}
+    <div class="route-total">
+      <div class="route-sum"><span>육상 이동거리 (왕복)</span><b>약 ${fmtKm(totalKm)} km</b></div>
+      <div class="route-sum"><span>총 소요시간</span><b>예상 ${fmtMin(totalMin)}</b></div>
+      <em>육상 왕복 + 항해 왕복 합계입니다. <b>점검 작업 시간과 대기 시간은 빠져 있습니다.</b></em>
+    </div>
+    ${cards}
+    ${byVendor.length?`<div class="route-warn">
+      <b>업체 점검 장비 ${byVendor.length}곳</b>은 일정에서 제외했습니다 —
+      ${byVendor.map(s=>esc(s.name)).join(', ')}</div>`:''}`;
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
 async function calcRoute(){
+  if(state.tab==='marine') return calcSailing();
   const list=state.picked.map(id=>state.stations.find(x=>x.id===id)).filter(Boolean);
   if(!list.length) return;
   const box=document.getElementById('routeResult');
@@ -1106,7 +1464,7 @@ function bindEvents(){
     state.mode=b.dataset.m;
     [...document.querySelectorAll('#modes .chip')].forEach(c=>c.setAttribute('aria-pressed', String(c===b)));
     const q=document.getElementById('q');
-    q.placeholder=MODE_PLACEHOLDER[state.mode];
+    q.placeholder=MODE_PLACEHOLDER[state.tab][state.mode];
     q.focus();
     renderList();
     if(state.query.trim()) setListOpen(true);
@@ -1117,6 +1475,15 @@ function bindEvents(){
     const b=e.target.closest('.chip'); if(!b) return;
     state.filter=b.dataset.f;
     [...document.querySelectorAll('#chips .chip')].forEach(c=>c.setAttribute('aria-pressed', String(c===b)));
+    renderList();
+  });
+
+  // 종류 필터 (해양 탭에만 있습니다)
+  const kinds=document.getElementById('kinds');
+  if(kinds) kinds.addEventListener('click',e=>{
+    const b=e.target.closest('.chip'); if(!b) return;
+    state.kind=b.dataset.k;
+    [...kinds.querySelectorAll('.chip')].forEach(c=>c.setAttribute('aria-pressed', String(c===b)));
     renderList();
   });
 
@@ -1151,6 +1518,18 @@ function bindEvents(){
   document.getElementById('calcBtn').addEventListener('click',calcRoute);
   renderTags();
 }
+
+/* 지상 ↔ 해양 전환 — 담아 둔 목록과 검색어는 탭마다 뜻이 달라 초기화합니다. */
+document.getElementById('tabs').addEventListener('click',e=>{
+  const b=e.target.closest('.tab'); if(!b || b.dataset.tab===state.tab) return;
+  state.tab=b.dataset.tab;
+  [...document.querySelectorAll('#tabs .tab')].forEach(t=>t.setAttribute('aria-pressed', String(t===b)));
+  Object.assign(state,{ filter:'all', kind:'all', query:'', mode:'all', listOpen:false,
+                        picked:[], selected:null, map:null, markerLayer:null, markers:{}, bounds:null });
+  closeSheet();
+  render();
+  window.scrollTo({top:0,behavior:'smooth'});
+});
 
 document.getElementById('dim').addEventListener('click',closeSheet);
 document.getElementById('sheetClose').addEventListener('click',closeSheet);
@@ -1187,6 +1566,16 @@ async function start(){
 
   const rows=parseCSV(text);
   state.stations=rows.map(buildStation).filter(s=>s.id||s.name!=='(이름 없음)');
+
+  // 해양장비 — 파일이 없어도 지상 화면은 그대로 동작합니다.
+  try{
+    const res=await fetch(CONFIG.marineCsvPath,{cache:'no-store'});
+    if(res.ok){
+      state.marine=parseCSV(await res.text()).map(buildMarine)
+        .filter(s=>s.id||s.name!=='(이름 없음)');
+      state.marineLoaded=true;
+    }
+  }catch(err){ /* 해양 탭에서 안내 문구로 알립니다 */ }
 
   if(!state.stations.length){
     document.getElementById('app').innerHTML=`<div class="empty" style="padding:60px 20px">
