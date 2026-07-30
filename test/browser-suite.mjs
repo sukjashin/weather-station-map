@@ -307,25 +307,29 @@ try {
       /직선 약 [\d.,]+km · 예상 .+/.test(txt) && txt.includes('도로 경로를 찾지 못했습니다'));
     ok('6-5 실패 배너 없음', !(await p.$('.route-warn')));
 
+    const officeName = await p.evaluate(() => CONFIG.office.name);
     const legs = await p.$$eval('.leg-path', ns => ns.map(n => n.innerText.replace(/\s+/g, ' ').trim()));
     eq('6-6 구간 수 = 담은 수 + 1', legs.length, 4);
     const chain = legs.map(l => l.split('→').map(s => s.trim()));
-    ok('6-7 첫 구간 출발지가 사무실', chain[0][0] === '사무실(임시)', legs[0]);
-    ok('6-8 마지막 구간 도착지가 사무실', chain.at(-1)[1] === '사무실(임시)', legs.at(-1));
+    ok('6-7 첫 구간 출발지가 사무실', chain[0][0] === officeName, legs[0]);
+    ok('6-8 마지막 구간 도착지가 사무실', chain.at(-1)[1] === officeName, legs.at(-1));
     ok('6-9 구간이 끊김 없이 이어짐', chain.every((c, i) => i === 0 || chain[i - 1][1] === c[0]), JSON.stringify(chain));
 
     const hrefs = await p.$$eval('.leg-nav', ns => ns.map(n => decodeURIComponent(n.getAttribute('href'))));
-    const coordOf = await p.evaluate(() => {
-      const m = {}; state.stations.forEach(s => m[s.name] = [s.lat, s.lon]);
-      m[CONFIG.office.name] = [CONFIG.office.lat, CONFIG.office.lon]; return m;
+    const addrOf = await p.evaluate(() => {
+      const clean = a => (a || '').replace(/\([^)]*\)/g, ' ').split(',')[0].replace(/\s+/g, ' ').trim();
+      const m = {}; state.stations.forEach(s => m[s.name] = clean(s.address));
+      m[CONFIG.office.name] = clean(CONFIG.office.address); return m;
     });
-    ok('6-10 길안내 링크의 출발·도착 좌표 일치', hrefs.every((h, i) => {
+    ok('6-10 길안내가 이름이 아닌 주소로 검색', hrefs.every((h, i) => {
       const [from, to] = chain[i];
-      return h.includes(`rt=${coordOf[from][1]},${coordOf[from][0]},${coordOf[to][1]},${coordOf[to][0]}`)
-          && h.includes(`rt1=${from}`) && h.includes(`rt2=${to}`);
+      return h.includes(`sName=${addrOf[from]}`) && h.includes(`eName=${addrOf[to]}`);
     }), hrefs[1]);
-    ok('6-11 카카오맵 자동차 길찾기 형식',
-      hrefs.every(h => h.startsWith('https://map.kakao.com/?') && h.includes('target=car')), hrefs[0]);
+    ok('6-11 카카오맵 길찾기 형식',
+      hrefs.every(h => h.startsWith('https://map.kakao.com/?sName=') && h.includes('&eName=')), hrefs[0]);
+    ok('6-11b 주소에서 괄호·쉼표 뒷부분 제거',
+      hrefs.some(h => h.includes('sName=전라남도 목포시 고하대로 815&')) ||
+      hrefs.some(h => h.includes('eName=전라남도 목포시 고하대로 815')), hrefs.join(' | '));
 
     // 화면에 표시된 순서가 정말 최단인지 완전탐색으로 대조
     const optimal = await p.evaluate(() => {
@@ -358,6 +362,18 @@ try {
     await p.locator('.step-link').nth(1).click(); await p.waitForTimeout(500);
     ok('6-14 방문지 클릭 → 상세 열림', await p.$eval('#sheet', n => n.classList.contains('show')));
     eq('6-15 열린 상세가 그 지점', await p.$eval('#sheetName', n => n.textContent.trim()), shown[1]);
+    await p.close();
+  }
+
+  /* ───────── 6.5 모든 지점의 길안내 검색어 ───────── */
+  {
+    const p = await newPage();
+    await p.goto(`${BASE}/index.html`); await ready(p);
+    const bad = await p.evaluate(() => state.stations
+      .map(s => ({ id: s.id, name: s.name, q: navQuery(s) }))
+      .filter(x => !x.q || x.q === x.name || x.q.length < 6));
+    eq('6.5-1 주소로 검색어를 못 만드는 지점 없음', bad, []);
+    eq('6.5-2 사무실 검색어', await p.evaluate(() => navQuery(CONFIG.office)), '광주광역시 북구 서암대로 71');
     await p.close();
   }
 
