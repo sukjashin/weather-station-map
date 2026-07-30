@@ -355,8 +355,14 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
    설정값 — 운영 전 이 부분만 실제 값으로 바꾸면 됩니다.
    ========================================================= */
 const CONFIG = {
-  // ⚠️ 실제 사무실 좌표로 교체 필요 (④ 최적 경로의 출발·도착지)
-  office: { name: '사무실(임시)', lat: 35.1595, lon: 126.8526 },
+  /* ④ 출장 경로의 출발·도착지.
+     ⚠️ 실제 출발 사무실이 다르면 이름·주소·좌표를 함께 바꿔 주세요.
+     주소는 길안내 검색어로도 쓰이므로 좌표와 같은 곳을 가리켜야 합니다. */
+  office: {
+    name: '광주지방기상청',
+    address: '광주광역시 북구 서암대로 71',
+    lat: 35.17294, lon: 126.89156
+  },
   maxPick: 8,        // 한 번에 고를 수 있는 장비 수
   soonDays: 30,      // 예정일까지 이 일수 이내면 '곧 도래'
   csvPath: 'data/stations.csv',
@@ -385,8 +391,8 @@ const CONFIG = {
    ※ CSV를 고쳤다면 이 아래 내용도 같은 값으로 맞춰 주세요.
    ========================================================= */
 const FALLBACK_CSV = `station_id,name,lat,lon,address,last_check,cycle_months,panorama,note
-43,솔라시도,34.71083,126.41163,전남광주통합특별시 해남군 산이면 구성리 해남군 산이면 구성리 655,,,,
-44,삼호,34.74476,126.4122,전남광주통합특별시 영암군 삼호읍 삼포리 영암군 삼호읍 에프원로 2,,,,
+43,솔라시도,34.71083,126.41163,전남광주통합특별시 해남군 산이면 구성리 655,,,,
+44,삼호,34.74476,126.4122,전남광주통합특별시 영암군 삼호읍 에프원로 2,,,,
 156,광주,35.17294,126.89156,광주광역시 북구 서암대로 71 광주지방기상청(운암동),,,156.svg,
 165,목포,34.81732,126.38151,전라남도 목포시 고하대로 815 (목포시 연산동 726-3 목포기상대),,,,
 168,여수,34.73929,127.74063,전라남도 여수시 고소동 304,,,,
@@ -919,18 +925,26 @@ function bestRoute(m,pts){
   return best;
 }
 
-/* 길안내 링크 — 출발지·도착지 좌표를 모두 담아 지도앱 길찾기를 엽니다.
+/* 길찾기에 넘길 검색어 — 지점명은 지도앱이 못 찾는 경우가 많아 주소를 씁니다.
+   괄호 안 부연설명과 쉼표 뒤 지번은 검색을 방해해서 떼어냅니다.
+   예) '전라남도 목포시 고하대로 815 (목포시 연산동 726-3 목포기상대)'
+       → '전라남도 목포시 고하대로 815' */
+function navQuery(p){
+  const addr=(p.address||'').replace(/\([^)]*\)/g,' ').split(',')[0].replace(/\s+/g,' ').trim();
+  return addr || p.name;
+}
+
+/* 길안내 링크 — 출발지·도착지를 모두 지정해 지도앱 길찾기를 엽니다.
    지도앱을 바꾸려면 CONFIG.navProvider 한 줄만 고치면 됩니다. */
 const NAV_LINK = {
-  // 카카오맵 자동차 길찾기 — rt는 출발경도,출발위도,도착경도,도착위도 순
+  // 카카오맵 길찾기 — 출발지/도착지를 주소로 검색합니다.
   kakao: (f,t) =>
-    `https://map.kakao.com/?map_type=TYPE_MAP&target=car`
-    + `&rt=${f.lon},${f.lat},${t.lon},${t.lat}`
-    + `&rt1=${encodeURIComponent(f.name)}&rt2=${encodeURIComponent(t.name)}`,
-  // 네이버지도 자동차 길찾기
+    `https://map.kakao.com/?sName=${encodeURIComponent(navQuery(f))}`
+    + `&eName=${encodeURIComponent(navQuery(t))}`,
+  // 네이버지도 길찾기
   naver: (f,t) =>
-    `https://map.naver.com/p/directions/${f.lon},${f.lat},${encodeURIComponent(f.name)},,`
-    + `/${t.lon},${t.lat},${encodeURIComponent(t.name)},,/-/car`
+    `https://map.naver.com/p/directions/-/-/-/car?c=&s=${encodeURIComponent(navQuery(f))}`
+    + `&e=${encodeURIComponent(navQuery(t))}`
 };
 function navLink(from,to){
   return (NAV_LINK[CONFIG.navProvider] || NAV_LINK.kakao)(from,to);
