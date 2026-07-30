@@ -168,8 +168,11 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
   background:var(--navy);color:#fff;border-radius:11px;padding:13px 15px;
   display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;
 }
-.route-total span{font-size:13.5px;opacity:.85}
-.route-total b{font-size:22px;font-weight:800;letter-spacing:-.5px}
+.route-total{gap:10px}
+.route-total-l{flex:1;min-width:0}
+.route-total span{display:block;font-size:13.5px;opacity:.85}
+.route-total em{display:block;font-style:normal;font-size:11.5px;opacity:.62;margin-top:2px;line-height:1.4}
+.route-total b{font-size:22px;font-weight:800;letter-spacing:-.5px;white-space:nowrap}
 .steps{list-style:none;margin:0;padding:0}
 .step{display:flex;gap:12px;align-items:flex-start;position:relative;padding-bottom:16px}
 .step:last-child{padding-bottom:0}
@@ -185,6 +188,41 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 .step-body{flex:1;min-width:0;padding-top:2px}
 .step-name{font-size:15.5px;font-weight:700}
 .step-meta{font-size:12.5px;color:var(--muted);margin-top:1px}
+/* 경로의 방문지 — 누르면 그 장비 현황이 열립니다 */
+.step-link{
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px;
+  background:none;border:0;padding:0;margin:0;font:inherit;color:var(--ink);
+  text-align:left;cursor:pointer;
+}
+.step-link:hover .step-name,.step-link:focus-visible .step-name{text-decoration:underline}
+.step-more{
+  font-size:11.5px;font-weight:700;color:var(--blue);
+  border:1px solid var(--blue);border-radius:999px;padding:1px 8px;
+}
+/* 구간 정보 — 출발지 → 도착지 · 거리 · 길안내 */
+.leg{
+  margin-top:7px;padding:8px 10px;background:#fff;border:1px solid var(--line);border-radius:10px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;
+}
+.leg-path{font-size:12.5px;color:var(--muted)}
+.leg-path b{color:var(--blue)}
+.leg-dist{font-size:12.5px;font-weight:700;color:var(--blue)}
+.leg-dist.straight{color:var(--unknown)}
+.leg-nav{
+  margin-left:auto;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+  font-size:12px;font-weight:700;color:var(--blue);text-decoration:none;
+  border:1.5px solid var(--blue);border-radius:999px;padding:3px 10px;
+}
+.leg-nav svg{width:13px;height:13px}
+.leg-warn{flex-basis:100%;font-size:11.5px;color:var(--unknown)}
+.route-loading{
+  padding:14px;text-align:center;font-size:13.5px;color:var(--muted);
+  border:1px dashed var(--line);border-radius:11px;background:#fff;
+}
+.route-warn{
+  margin-bottom:10px;padding:10px 12px;border-radius:10px;line-height:1.5;
+  background:var(--unknown-bg);color:var(--unknown);font-size:12.5px;
+}
 
 /* ===== ⑤ 파노라마 ===== */
 .pano-pick{font-size:13.5px;color:var(--muted);margin:0 0 10px}
@@ -287,7 +325,7 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
     </dl>
     <p class="foot-note">
       본 화면의 장비 정보는 <code>data/stations.csv</code> 파일을 읽어 표시합니다.<br>
-      경로 안내는 직선거리 기준의 <b>대략적인 순서</b>이며 실제 도로 상황과 다를 수 있습니다.
+      경로 거리·시간은 도로 기준으로 계산하지만 <b>실시간 교통 상황은 반영되지 않습니다</b>.
     </p>
   </footer>
 </div>
@@ -311,7 +349,17 @@ const CONFIG = {
   maxPick: 8,        // 한 번에 고를 수 있는 장비 수
   soonDays: 30,      // 예정일까지 이 일수 이내면 '곧 도래'
   csvPath: 'data/stations.csv',
-  panoDir: 'panoramas/'
+  panoDir: 'panoramas/',
+
+  /* 경로 거리 계산 방식
+     'osrm'     : 도로 거리·소요시간을 외부 경로탐색 서버에서 받아옵니다 (기본, 키 불필요)
+     'straight' : 외부 접속 없이 직선거리로만 계산합니다 (사내망에서 외부가 막힌 경우)
+     서버 응답이 없거나 실패하면 자동으로 직선거리로 내려가고 화면에 그 사실을 표시합니다. */
+  routing: {
+    provider: 'osrm',
+    osrmBase: 'https://router.project-osrm.org',
+    timeoutMs: 12000
+  }
 };
 
 /* =========================================================
@@ -495,6 +543,14 @@ function distKm(a,b){
   return 2*R*Math.asin(Math.sqrt(s));
 }
 function fmtKm(k){ return k<10 ? k.toFixed(1) : Math.round(k).toLocaleString('ko-KR'); }
+// 분 → "1시간 5분" / "45분"
+function fmtMin(m){
+  if(m==null||!isFinite(m)) return null;
+  const t=Math.round(m);
+  if(t<60) return `${t}분`;
+  const h=Math.floor(t/60), r=t%60;
+  return r ? `${h}시간 ${r}분` : `${h}시간`;
+}
 const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* ========================= 상태 판정 ========================= */
@@ -575,7 +631,9 @@ function render(){
       <p class="route-from">출발 · 도착 &nbsp;<b>${esc(CONFIG.office.name)}</b> (왕복 기준)</p>
       <div class="picked-tags" id="tags"></div>
       <button class="btn" id="calcBtn" disabled>장비를 담아주세요</button>
-      <p class="route-note">최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다. 직선거리 기준의 <b>대략적인 순서</b>이며, 실제 도로 거리와는 차이가 있습니다.</p>
+      <p class="route-note">최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다.
+        거리·시간은 <b>도로 기준</b>으로 계산하며, 구간마다 <b>직전 방문지가 출발지</b>로 고정된 길안내를 엽니다.
+        도로로 이어지지 않는 섬 구간이나 외부 접속이 막힌 환경에서는 직선거리로 표시됩니다.</p>
       <div class="route-result" id="routeResult"></div>
     </div>
   </section>
@@ -706,7 +764,7 @@ function openSheet(id){
       ${s.note?`<li><b>비고</b><span>${esc(s.note)}</span></li>`:''}
     </ul>
     <div class="sheet-btns">
-      ${navUrl?`<a class="btn" href="${navUrl}" target="_blank" rel="noopener">${ICON.nav} 길안내</a>`:''}
+      ${navUrl?`<a class="btn" href="${navUrl}" target="_blank" rel="noopener">${ICON.nav} 길안내 (현위치 출발)</a>`:''}
       <button class="btn btn-ghost" data-act="pano" data-id="${esc(s.id)}">${ICON.vr} 현장 둘러보기</button>
     </div>`;
   document.getElementById('sheet').classList.add('show');
@@ -747,46 +805,144 @@ function togglePick(id){
   document.getElementById('routeResult').classList.remove('show');
 }
 
-// 사무실 출발 → 선택 장비 전부 → 사무실 복귀. 최단 순서를 완전탐색으로 찾습니다.
-function bestRoute(list){
+/* 지점 간 거리·소요시간 표를 만듭니다.
+   provider가 'osrm'이면 도로 기준, 실패하거나 'straight'면 직선 기준으로 돌아갑니다. */
+function straightMatrix(pts){
+  const n=pts.length, dist=[], dur=[];
+  for(let i=0;i<n;i++){
+    dist.push([]); dur.push([]);
+    for(let j=0;j<n;j++){ dist[i].push(distKm(pts[i],pts[j])); dur[i].push(null); }
+  }
+  return {dist,dur,mode:'straight'};
+}
+
+async function roadMatrix(pts){
+  if(CONFIG.routing.provider!=='osrm') return straightMatrix(pts);
+  const coords=pts.map(p=>`${p.lon},${p.lat}`).join(';');
+  const url=`${CONFIG.routing.osrmBase}/table/v1/driving/${coords}?annotations=distance,duration`;
+  const ctl=new AbortController();
+  const timer=setTimeout(()=>ctl.abort(), CONFIG.routing.timeoutMs);
+  try{
+    const res=await fetch(url,{signal:ctl.signal});
+    if(!res.ok) throw new Error('경로 서버 응답 '+res.status);
+    const j=await res.json();
+    if(j.code!=='Ok'||!Array.isArray(j.distances)) throw new Error(j.code||'응답 형식이 예상과 다릅니다');
+    return {
+      // 미터 → km, 초 → 분. 도로로 이어지지 않는 구간은 null로 옵니다(섬 등).
+      dist: j.distances.map(r=>r.map(m=> m==null?null:m/1000)),
+      dur:  (j.durations||[]).map(r=>r.map(s=> s==null?null:s/60)),
+      mode: 'road'
+    };
+  }catch(err){
+    const f=straightMatrix(pts);
+    f.error = err.name==='AbortError' ? '경로 서버 응답이 없습니다(시간 초과)' : (err.message||String(err));
+    return f;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+// 한 구간의 거리·시간. 도로값이 없으면 직선거리로 대체하고 road:false로 표시합니다.
+function legInfo(m,pts,i,j){
+  const km=m.dist[i]?.[j];
+  if(m.mode==='road' && km!=null) return {km, min:m.dur[i]?.[j] ?? null, road:true};
+  return {km: distKm(pts[i],pts[j]), min:null, road:false};
+}
+
+/* 사무실(0번) 출발 → 선택 장비 전부 → 사무실 복귀.
+   거리표를 미리 만들어 두고 최단 순서를 완전탐색으로 찾습니다(최대 8곳). */
+function bestRoute(m,pts){
+  const stops=pts.map((_,i)=>i).slice(1);
   let best=null;
   const perm=(arr,cur)=>{
     if(!arr.length){
-      let total=0, prev=CONFIG.office;
+      const seq=[...cur,0];
+      let total=0, prev=0;
       const legs=[];
-      for(const s of cur){ const d=distKm(prev,s); legs.push(d); total+=d; prev=s; }
-      const back=distKm(prev,CONFIG.office); legs.push(back); total+=back;
-      if(!best||total<best.total) best={order:cur.slice(),legs,total};
+      for(const k of seq){ const L=legInfo(m,pts,prev,k); legs.push({from:prev,to:k,...L}); total+=L.km; prev=k; }
+      if(!best||total<best.total) best={legs,total};
       return;
     }
-    for(let i=0;i<arr.length;i++){
-      const rest=arr.slice(0,i).concat(arr.slice(i+1));
-      perm(rest, cur.concat(arr[i]));
-    }
+    for(let i=0;i<arr.length;i++) perm(arr.slice(0,i).concat(arr.slice(i+1)), cur.concat(arr[i]));
   };
-  perm(list,[]);
+  perm(stops,[]);
   return best;
 }
 
-function calcRoute(){
+// 카카오맵 길찾기 — 구간마다 출발지를 직전 방문지로 고정합니다.
+function navLink(from,to){
+  return `https://map.kakao.com/link/from/${encodeURIComponent(from.name)},${from.lat},${from.lon}`
+       + `/to/${encodeURIComponent(to.name)},${to.lat},${to.lon}`;
+}
+
+function legRow(m,pts,leg){
+  const from=pts[leg.from], to=pts[leg.to];
+  const time=fmtMin(leg.min);
+  const label = leg.road
+    ? `도로 약 ${fmtKm(leg.km)}km${time?` · 약 ${time}`:''}`
+    : `직선 약 ${fmtKm(leg.km)}km`;
+  return `<div class="leg">
+    <span class="leg-path">${esc(from.name)} <b>→</b> ${esc(to.name)}</span>
+    <span class="leg-dist${leg.road?'':' straight'}">${label}</span>
+    <a class="leg-nav" href="${navLink(from,to)}" target="_blank" rel="noopener">${ICON.nav} 길안내</a>
+    ${(m.mode==='road'&&!leg.road)
+      ? `<span class="leg-warn">도로 경로를 찾지 못했습니다 (섬·선박 구간일 수 있습니다)</span>` : ''}
+  </div>`;
+}
+
+async function calcRoute(){
   const list=state.picked.map(id=>state.stations.find(x=>x.id===id)).filter(Boolean);
   if(!list.length) return;
-  const r=bestRoute(list);
   const box=document.getElementById('routeResult');
-  const steps = [
-    `<li class="step"><span class="step-no office">출</span><div class="step-body">
-       <div class="step-name">${esc(CONFIG.office.name)}</div><div class="step-meta">출발</div></div></li>`,
-    ...r.order.map((s,i)=>`<li class="step"><span class="step-no">${i+1}</span><div class="step-body">
-       <div class="step-name">${esc(s.name)} ${badge(s)}</div>
-       <div class="step-meta">직전 지점에서 약 ${fmtKm(r.legs[i])}km · ${esc(s.address)}</div></div></li>`),
-    `<li class="step"><span class="step-no office">복</span><div class="step-body">
-       <div class="step-name">${esc(CONFIG.office.name)}</div>
-       <div class="step-meta">복귀 · 약 ${fmtKm(r.legs[r.legs.length-1])}km</div></div></li>`
-  ].join('');
-  box.innerHTML = `
-    <div class="route-total"><span>총 이동거리 (직선 기준)</span><b>약 ${fmtKm(r.total)} km</b></div>
-    <ul class="steps">${steps}</ul>`;
+  const btn=document.getElementById('calcBtn');
+
+  box.innerHTML=`<div class="route-loading">도로 경로를 계산하는 중입니다…</div>`;
   box.classList.add('show');
+  btn.disabled=true;
+
+  const pts=[CONFIG.office, ...list];
+  const m=await roadMatrix(pts);
+  const r=bestRoute(m,pts);
+
+  btn.disabled=false;
+  renderTags();
+
+  const roadLegs=r.legs.filter(l=>l.road).length;
+  const basis = m.mode==='road' && roadLegs===r.legs.length ? '도로 기준'
+              : m.mode==='road' ? '도로 기준 · 일부 구간 직선'
+              : '직선 기준';
+  const totalMin = r.legs.every(l=>l.min!=null) ? r.legs.reduce((a,l)=>a+l.min,0) : null;
+
+  const steps=[
+    `<li class="step"><span class="step-no office">출</span><div class="step-body">
+       <div class="step-name">${esc(CONFIG.office.name)}</div>
+       <div class="step-meta">출발</div></div></li>`,
+    ...r.legs.slice(0,-1).map((leg,i)=>{
+      const s=pts[leg.to];
+      return `<li class="step"><span class="step-no">${i+1}</span><div class="step-body">
+        <button class="step-link" data-act="open" data-id="${esc(s.id)}">
+          <span class="step-name">${esc(s.name)}</span>${badge(s)}<span class="step-more">현황 보기</span>
+        </button>
+        <div class="step-meta">${esc(s.address)||'주소 정보 없음'}</div>
+        ${legRow(m,pts,leg)}</div></li>`;
+    }),
+    (()=>{ const back=r.legs[r.legs.length-1];
+      return `<li class="step"><span class="step-no office">복</span><div class="step-body">
+        <div class="step-name">${esc(CONFIG.office.name)}</div>
+        <div class="step-meta">복귀</div>
+        ${legRow(m,pts,back)}</div></li>`; })()
+  ].join('');
+
+  box.innerHTML = `
+    ${m.error?`<div class="route-warn">도로 거리를 가져오지 못해 <b>직선거리</b>로 계산했습니다. (${esc(m.error)})</div>`:''}
+    <div class="route-total">
+      <div class="route-total-l">
+        <span>총 이동거리</span>
+        <em>${basis}${totalMin?` · 이동시간 약 ${fmtMin(totalMin)}`:''}</em>
+      </div>
+      <b>약 ${fmtKm(r.total)} km</b>
+    </div>
+    <ul class="steps">${steps}</ul>`;
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
@@ -887,6 +1043,11 @@ function bindEvents(){
 
   document.getElementById('tags').addEventListener('click',e=>{
     const b=e.target.closest('[data-act="unpick"]'); if(b) togglePick(b.dataset.id);
+  });
+
+  // 경로의 방문지를 누르면 그 장비 현황(상세 카드)이 열립니다.
+  document.getElementById('routeResult').addEventListener('click',e=>{
+    const b=e.target.closest('[data-act="open"]'); if(b) openSheet(b.dataset.id);
   });
 
   document.getElementById('calcBtn').addEventListener('click',calcRoute);
