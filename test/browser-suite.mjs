@@ -255,27 +255,31 @@ try {
 
     const txt = await p.$eval('#routeResult', n => n.innerText);
     ok('6-1 도로 기준 표기', txt.includes('도로 기준'));
-    ok('6-2 도로 거리·소요시간 표시', /도로 약 [\d.,]+km · 약 .+/.test(txt));
-    ok('6-3 섬 구간은 직선 + 사유 표시', txt.includes('직선 약') && txt.includes('도로 경로를 찾지 못했습니다'));
-    ok('6-4 실패 배너 없음', !(await p.$('.route-warn')));
+    ok('6-2 총 이동거리·총 소요시간 함께 표시', /총 이동거리[\s\S]*총 소요시간/.test(txt), txt.split('\n').slice(0, 5).join(' / '));
+    ok('6-3 구간별 도로 거리·시간 표시', /도로 약 [\d.,]+km · 약 .+/.test(txt));
+    ok('6-4 섬 구간은 직선 + 예상시간 + 사유 표시',
+      /직선 약 [\d.,]+km · 예상 .+/.test(txt) && txt.includes('도로 경로를 찾지 못했습니다'));
+    ok('6-5 실패 배너 없음', !(await p.$('.route-warn')));
 
     const legs = await p.$$eval('.leg-path', ns => ns.map(n => n.innerText.replace(/\s+/g, ' ').trim()));
-    eq('6-5 구간 수 = 담은 수 + 1', legs.length, 4);
+    eq('6-6 구간 수 = 담은 수 + 1', legs.length, 4);
     const chain = legs.map(l => l.split('→').map(s => s.trim()));
-    ok('6-6 첫 구간 출발지가 사무실', chain[0][0] === '사무실(임시)', legs[0]);
-    ok('6-7 마지막 구간 도착지가 사무실', chain.at(-1)[1] === '사무실(임시)', legs.at(-1));
-    ok('6-8 구간이 끊김 없이 이어짐', chain.every((c, i) => i === 0 || chain[i - 1][1] === c[0]), JSON.stringify(chain));
+    ok('6-7 첫 구간 출발지가 사무실', chain[0][0] === '사무실(임시)', legs[0]);
+    ok('6-8 마지막 구간 도착지가 사무실', chain.at(-1)[1] === '사무실(임시)', legs.at(-1));
+    ok('6-9 구간이 끊김 없이 이어짐', chain.every((c, i) => i === 0 || chain[i - 1][1] === c[0]), JSON.stringify(chain));
 
     const hrefs = await p.$$eval('.leg-nav', ns => ns.map(n => decodeURIComponent(n.getAttribute('href'))));
     const coordOf = await p.evaluate(() => {
       const m = {}; state.stations.forEach(s => m[s.name] = [s.lat, s.lon]);
       m[CONFIG.office.name] = [CONFIG.office.lat, CONFIG.office.lon]; return m;
     });
-    ok('6-9 길안내 링크의 출발·도착 좌표 일치', hrefs.every((h, i) => {
+    ok('6-10 길안내 링크의 출발·도착 좌표 일치', hrefs.every((h, i) => {
       const [from, to] = chain[i];
-      return h.includes(`/from/${from},${coordOf[from][0]},${coordOf[from][1]}/to/${to},${coordOf[to][0]},${coordOf[to][1]}`);
+      return h.includes(`rt=${coordOf[from][1]},${coordOf[from][0]},${coordOf[to][1]},${coordOf[to][0]}`)
+          && h.includes(`rt1=${from}`) && h.includes(`rt2=${to}`);
     }), hrefs[1]);
-    ok('6-10 카카오맵 from/to 형식', hrefs.every(h => h.startsWith('https://map.kakao.com/link/from/') && h.includes('/to/')));
+    ok('6-11 카카오맵 자동차 길찾기 형식',
+      hrefs.every(h => h.startsWith('https://map.kakao.com/?') && h.includes('target=car')), hrefs[0]);
 
     // 화면에 표시된 순서가 정말 최단인지 완전탐색으로 대조
     const optimal = await p.evaluate(() => {
@@ -301,13 +305,13 @@ try {
       return best;
     });
     const shown = await p.$$eval('.step-link .step-name', ns => ns.map(n => n.textContent.trim()));
-    eq('6-11 방문 순서가 최단 순서와 일치', shown, optimal.order);
+    eq('6-12 방문 순서가 최단 순서와 일치', shown, optimal.order);
     const totalShown = +(await p.$eval('.route-total b', n => n.textContent)).replace(/[^\d.]/g, '');
-    ok('6-12 총거리가 최단 비용과 일치', Math.abs(totalShown - optimal.t) < 1.5, `화면 ${totalShown} vs 계산 ${optimal.t.toFixed(1)}`);
+    ok('6-13 총거리가 최단 비용과 일치', Math.abs(totalShown - optimal.t) < 1.5, `화면 ${totalShown} vs 계산 ${optimal.t.toFixed(1)}`);
 
     await p.locator('.step-link').nth(1).click(); await p.waitForTimeout(500);
-    ok('6-13 방문지 클릭 → 상세 열림', await p.$eval('#sheet', n => n.classList.contains('show')));
-    eq('6-14 열린 상세가 그 지점', await p.$eval('#sheetName', n => n.textContent.trim()), shown[1]);
+    ok('6-14 방문지 클릭 → 상세 열림', await p.$eval('#sheet', n => n.classList.contains('show')));
+    eq('6-15 열린 상세가 그 지점', await p.$eval('#sheetName', n => n.textContent.trim()), shown[1]);
     await p.close();
   }
 
@@ -346,8 +350,9 @@ try {
     for (const id of ['165', '168']) { await p.locator(`#list li[data-id="${id}"] button.pick`).click(); await p.waitForTimeout(120); }
     await p.click('#calcBtn'); await p.waitForSelector('.route-total', { timeout: 10000 });
     ok('8-1 외부 호출 안 함', !called);
-    ok('8-2 직선 기준 표기', (await p.$eval('.route-total', n => n.innerText)).includes('직선 기준'));
-    ok('8-3 실패 배너 없음', !(await p.$('.route-warn')));
+    ok('8-2 직선·추정 기준 표기', (await p.$eval('.route-total', n => n.innerText)).includes('직선거리와 평균 시속'));
+    ok('8-3 도로 없이도 소요시간 표시', (await p.$eval('.route-total', n => n.innerText)).includes('총 소요시간'));
+    ok('8-4 실패 배너 없음', !(await p.$('.route-warn')));
     await p.close();
   }
 

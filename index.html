@@ -168,11 +168,15 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
   background:var(--navy);color:#fff;border-radius:11px;padding:13px 15px;
   display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;
 }
-.route-total{gap:10px}
-.route-total-l{flex:1;min-width:0}
-.route-total span{display:block;font-size:13.5px;opacity:.85}
-.route-total em{display:block;font-style:normal;font-size:11.5px;opacity:.62;margin-top:2px;line-height:1.4}
-.route-total b{font-size:22px;font-weight:800;letter-spacing:-.5px;white-space:nowrap}
+.route-total{display:block;padding:14px 16px}
+.route-sum{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.route-sum + .route-sum{margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,.16)}
+.route-sum span{font-size:13.5px;opacity:.85}
+.route-sum b{font-size:22px;font-weight:800;letter-spacing:-.5px;white-space:nowrap}
+.route-total em{
+  display:block;font-style:normal;font-size:11.5px;opacity:.62;
+  margin-top:9px;line-height:1.45;
+}
 .steps{list-style:none;margin:0;padding:0}
 .step{display:flex;gap:12px;align-items:flex-start;position:relative;padding-bottom:16px}
 .step:last-child{padding-bottom:0}
@@ -351,6 +355,9 @@ const CONFIG = {
   csvPath: 'data/stations.csv',
   panoDir: 'panoramas/',
 
+  // 길안내 버튼이 열 지도앱 — 'kakao' 또는 'naver'
+  navProvider: 'kakao',
+
   /* 경로 거리 계산 방식
      'osrm'     : 도로 거리·소요시간을 외부 경로탐색 서버에서 받아옵니다 (기본, 키 불필요)
      'straight' : 외부 접속 없이 직선거리로만 계산합니다 (사내망에서 외부가 막힌 경우)
@@ -358,7 +365,10 @@ const CONFIG = {
   routing: {
     provider: 'osrm',
     osrmBase: 'https://router.project-osrm.org',
-    timeoutMs: 12000
+    timeoutMs: 12000,
+    // 도로 소요시간을 받지 못한 구간의 시간 추정에 쓰는 평균 시속(km/h).
+    // 화면에는 '예상'으로 따로 표시합니다.
+    avgKmh: 60
   }
 };
 
@@ -633,7 +643,8 @@ function render(){
       <button class="btn" id="calcBtn" disabled>장비를 담아주세요</button>
       <p class="route-note">최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다.
         거리·시간은 <b>도로 기준</b>으로 계산하며, 구간마다 <b>직전 방문지가 출발지</b>로 고정된 길안내를 엽니다.
-        도로로 이어지지 않는 섬 구간이나 외부 접속이 막힌 환경에서는 직선거리로 표시됩니다.</p>
+        도로로 이어지지 않는 섬 구간이나 외부 접속이 막힌 환경에서는 직선거리와
+        평균 시속 ${CONFIG.routing.avgKmh}km로 <b>추정</b>해 표시합니다.</p>
       <div class="route-result" id="routeResult"></div>
     </div>
   </section>
@@ -842,11 +853,14 @@ async function roadMatrix(pts){
   }
 }
 
-// 한 구간의 거리·시간. 도로값이 없으면 직선거리로 대체하고 road:false로 표시합니다.
+/* 한 구간의 거리·시간.
+   도로값이 없으면 직선거리로 대체하고, 시간은 평균 시속으로 추정합니다(road:false). */
 function legInfo(m,pts,i,j){
   const km=m.dist[i]?.[j];
-  if(m.mode==='road' && km!=null) return {km, min:m.dur[i]?.[j] ?? null, road:true};
-  return {km: distKm(pts[i],pts[j]), min:null, road:false};
+  const min=m.dur[i]?.[j];
+  if(m.mode==='road' && km!=null && min!=null) return {km, min, road:true};
+  const straightKm = (m.mode==='road' && km!=null) ? km : distKm(pts[i],pts[j]);
+  return {km: straightKm, min: straightKm/CONFIG.routing.avgKmh*60, road:false};
 }
 
 /* 사무실(0번) 출발 → 선택 장비 전부 → 사무실 복귀.
@@ -869,18 +883,29 @@ function bestRoute(m,pts){
   return best;
 }
 
-// 카카오맵 길찾기 — 구간마다 출발지를 직전 방문지로 고정합니다.
+/* 길안내 링크 — 출발지·도착지 좌표를 모두 담아 지도앱 길찾기를 엽니다.
+   지도앱을 바꾸려면 CONFIG.navProvider 한 줄만 고치면 됩니다. */
+const NAV_LINK = {
+  // 카카오맵 자동차 길찾기 — rt는 출발경도,출발위도,도착경도,도착위도 순
+  kakao: (f,t) =>
+    `https://map.kakao.com/?map_type=TYPE_MAP&target=car`
+    + `&rt=${f.lon},${f.lat},${t.lon},${t.lat}`
+    + `&rt1=${encodeURIComponent(f.name)}&rt2=${encodeURIComponent(t.name)}`,
+  // 네이버지도 자동차 길찾기
+  naver: (f,t) =>
+    `https://map.naver.com/p/directions/${f.lon},${f.lat},${encodeURIComponent(f.name)},,`
+    + `/${t.lon},${t.lat},${encodeURIComponent(t.name)},,/-/car`
+};
 function navLink(from,to){
-  return `https://map.kakao.com/link/from/${encodeURIComponent(from.name)},${from.lat},${from.lon}`
-       + `/to/${encodeURIComponent(to.name)},${to.lat},${to.lon}`;
+  return (NAV_LINK[CONFIG.navProvider] || NAV_LINK.kakao)(from,to);
 }
 
 function legRow(m,pts,leg){
   const from=pts[leg.from], to=pts[leg.to];
   const time=fmtMin(leg.min);
   const label = leg.road
-    ? `도로 약 ${fmtKm(leg.km)}km${time?` · 약 ${time}`:''}`
-    : `직선 약 ${fmtKm(leg.km)}km`;
+    ? `도로 약 ${fmtKm(leg.km)}km · 약 ${time}`
+    : `직선 약 ${fmtKm(leg.km)}km · 예상 ${time}`;
   return `<div class="leg">
     <span class="leg-path">${esc(from.name)} <b>→</b> ${esc(to.name)}</span>
     <span class="leg-dist${leg.road?'':' straight'}">${label}</span>
@@ -907,11 +932,11 @@ async function calcRoute(){
   btn.disabled=false;
   renderTags();
 
-  const roadLegs=r.legs.filter(l=>l.road).length;
-  const basis = m.mode==='road' && roadLegs===r.legs.length ? '도로 기준'
-              : m.mode==='road' ? '도로 기준 · 일부 구간 직선'
-              : '직선 기준';
-  const totalMin = r.legs.every(l=>l.min!=null) ? r.legs.reduce((a,l)=>a+l.min,0) : null;
+  const allRoad = r.legs.every(l=>l.road);
+  const basis = allRoad ? '도로 기준'
+              : m.mode==='road' ? `도로 기준 · 일부 구간은 직선거리와 평균 시속 ${CONFIG.routing.avgKmh}km 추정`
+              : `직선거리와 평균 시속 ${CONFIG.routing.avgKmh}km 추정`;
+  const totalMin = r.legs.reduce((a,l)=>a+l.min,0);
 
   const steps=[
     `<li class="step"><span class="step-no office">출</span><div class="step-body">
@@ -936,11 +961,13 @@ async function calcRoute(){
   box.innerHTML = `
     ${m.error?`<div class="route-warn">도로 거리를 가져오지 못해 <b>직선거리</b>로 계산했습니다. (${esc(m.error)})</div>`:''}
     <div class="route-total">
-      <div class="route-total-l">
-        <span>총 이동거리</span>
-        <em>${basis}${totalMin?` · 이동시간 약 ${fmtMin(totalMin)}`:''}</em>
+      <div class="route-sum">
+        <span>총 이동거리</span><b>약 ${fmtKm(r.total)} km</b>
       </div>
-      <b>약 ${fmtKm(r.total)} km</b>
+      <div class="route-sum">
+        <span>총 소요시간</span><b>${allRoad?'약':'예상'} ${fmtMin(totalMin)}</b>
+      </div>
+      <em>${basis} · 실시간 교통 상황은 반영되지 않습니다</em>
     </div>
     <ul class="steps">${steps}</ul>`;
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
