@@ -142,6 +142,13 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 .pin-soon{background:var(--soon)}
 .pin-due{background:var(--due)}
 .pin-unknown{background:var(--unknown)}
+/* 지도에 올라가는 핀 — 글씨 없이 색으로만 구분합니다 */
+.pin-pick{background:var(--blue)}                 /* 출장지로 담은 장비 */
+.pin-office{background:var(--navy)}               /* 사무실 */
+.pin-sel{                                         /* 지금 선택한 장비 */
+  background:var(--navy);width:34px;height:34px;
+  box-shadow:0 0 0 4px rgba(21,101,192,.28), 0 3px 8px rgba(0,0,0,.4);
+}
 
 /* ===== ④ 경로 ===== */
 .route-box{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:15px}
@@ -590,7 +597,8 @@ function buildStation(raw){
 
 /* ========================= 상태 저장소 ========================= */
 const state = { stations:[], filter:'all', query:'', mode:'all', listOpen:false,
-                picked:[], map:null, markers:{}, bounds:null, pano:null };
+                picked:[], selected:null,
+                map:null, markerLayer:null, markers:{}, bounds:null, pano:null };
 
 // 검색 방식별 안내 문구
 const MODE_PLACEHOLDER = {
@@ -606,7 +614,8 @@ function render(){
   <!-- ③ 지도 + 목록 -->
   <section>
     <h2>지도 · 장비 목록</h2>
-    <p class="sec-desc">핀이나 목록을 누르면 상세 정보가 열립니다.</p>
+    <p class="sec-desc">목록에서 장비를 누르면 지도에 위치가 표시됩니다.
+      <b>＋ 담기</b>로 고른 출장지도 함께 핀으로 보입니다.</p>
     <div id="map"></div>
     <div class="map-fail" id="mapFail">지도를 불러오지 못했습니다. 아래 목록은 정상적으로 이용할 수 있습니다.</div>
     <div class="tools">
@@ -725,19 +734,10 @@ function initMap(){
     maxZoom:18, attribution:'&copy; OpenStreetMap'
   }).addTo(state.map);
 
-  // 사무실
-  L.marker([CONFIG.office.lat,CONFIG.office.lon],{
-    icon:L.divIcon({className:'',html:`<div class="pin" style="background:#0d2f5c"><span>본</span></div>`,iconSize:[28,28],iconAnchor:[14,26]})
-  }).addTo(state.map).bindTooltip(CONFIG.office.name);
+  // 핀은 처음에 하나도 두지 않습니다. 선택한 장비와 출장지만 syncMarkers가 올립니다.
+  state.markerLayer=L.layerGroup().addTo(state.map);
+  syncMarkers();
 
-  pts.forEach(s=>{
-    const m=L.marker([s.lat,s.lon],{
-      icon:L.divIcon({className:'',html:`<div class="pin ${s.status.pin}"><span>${s.status.letter}</span></div>`,iconSize:[28,28],iconAnchor:[14,26]})
-    }).addTo(state.map);
-    m.on('click',()=>openSheet(s.id));
-    m.bindTooltip(`${s.name} · ${s.status.label}`);
-    state.markers[s.id]=m;
-  });
   // 컨테이너 크기가 확정된 뒤 '한 번만' 범위를 맞춥니다.
   // (fitBounds를 여러 번 겹쳐 부르면 타일 격자가 어긋나 지도 일부가 비어 보입니다)
   state.bounds = pts.length ? L.latLngBounds(pts.map(s=>[s.lat,s.lon])).pad(0.12) : null;
@@ -753,10 +753,46 @@ function initMap(){
   window.addEventListener('orientationchange',onResize);
 }
 
+/* 지도 핀을 다시 그립니다 — 선택한 장비 + 출장지로 담은 장비(+사무실)만 올립니다.
+   핀에는 글씨를 넣지 않고, 이름은 눌렀을 때 말풍선으로 보여줍니다. */
+function syncMarkers(){
+  if(!state.map || !state.markerLayer) return;
+  state.markerLayer.clearLayers();
+  state.markers={};
+
+  const put=(lat,lon,cls,label,onClick,size)=>{
+    const m=L.marker([lat,lon],{
+      icon:L.divIcon({className:'',html:`<div class="pin ${cls}"></div>`,
+        iconSize:[size,size], iconAnchor:[size/2,size-2]})
+    }).addTo(state.markerLayer);
+    m.bindTooltip(label);
+    if(onClick) m.on('click',onClick);
+    return m;
+  };
+
+  // 출장지를 담았을 때만 사무실(출발·도착지)을 함께 보여줍니다.
+  if(state.picked.length) put(CONFIG.office.lat, CONFIG.office.lon, 'pin-office', CONFIG.office.name, null, 28);
+
+  for(const id of state.picked){
+    if(id===state.selected) continue;                 // 선택 핀으로 대신 표시
+    const s=state.stations.find(x=>x.id===id);
+    if(s && s.valid) state.markers[id]=put(s.lat,s.lon,'pin-pick',`${s.name} · 출장지`,()=>openSheet(s.id),28);
+  }
+
+  const sel=state.stations.find(x=>x.id===state.selected);
+  if(sel && sel.valid){
+    const picked=state.picked.includes(sel.id);
+    state.markers[sel.id]=put(sel.lat,sel.lon,'pin-sel',
+      picked?`${sel.name} · 출장지`:sel.name, ()=>openSheet(sel.id), 34);
+  }
+}
+
 /* ========================= 바텀시트 ========================= */
 function openSheet(id){
   const s=state.stations.find(x=>x.id===id); if(!s) return;
-  // 핀이 몰려 있어도 어느 장비인지 보이도록 지도를 해당 위치로 옮깁니다.
+  // 선택한 장비를 지도에 핀으로 띄우고 그 위치로 옮깁니다.
+  state.selected=id;
+  syncMarkers();
   if(state.map && s.valid) state.map.setView([s.lat,s.lon], Math.max(state.map.getZoom(), 11), {animate:true});
   const navUrl = s.valid ? `https://map.kakao.com/link/to/${encodeURIComponent(s.name+' AWS')},${s.lat},${s.lon}` : null;
   document.getElementById('sheetBody').innerHTML = `
@@ -812,7 +848,7 @@ function togglePick(id){
     }
     state.picked.push(id);
   }
-  renderTags(); renderList();
+  renderTags(); renderList(); syncMarkers();
   document.getElementById('routeResult').classList.remove('show');
 }
 
@@ -1057,9 +1093,14 @@ function bindEvents(){
   // 목록 접기/펴기
   document.getElementById('listToggle').addEventListener('click',()=>setListOpen(!state.listOpen));
 
-  // 지도 전체 보기
+  // 지도 전체 보기 — 핀이 올라와 있으면 그 핀들에, 없으면 광주·전남 전체에 맞춥니다.
   document.getElementById('fitBtn').addEventListener('click',()=>{
-    if(state.map && state.bounds) state.map.fitBounds(state.bounds);
+    if(!state.map) return;
+    const shown=Object.values(state.markers).map(m=>m.getLatLng());
+    if(state.picked.length) shown.push(L.latLng(CONFIG.office.lat,CONFIG.office.lon));
+    if(shown.length>1) state.map.fitBounds(L.latLngBounds(shown).pad(0.25));
+    else if(shown.length===1) state.map.setView(shown[0],12);
+    else if(state.bounds) state.map.fitBounds(state.bounds);
   });
 
   document.getElementById('list').addEventListener('click',e=>{

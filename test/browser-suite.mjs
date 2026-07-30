@@ -242,6 +242,52 @@ try {
     await p.close();
   }
 
+  /* ───────── 5.5 지도 핀 ─────────
+     이 환경에서는 Leaflet CDN이 막혀 실제 지도를 못 띄우므로,
+     test/leaflet-stub.js로 대신하고 '어떤 핀이 올라갔는지'만 확인합니다. */
+  {
+    const p = await newPage();
+    await p.addInitScript({ path: path.join(ROOT, 'test', 'leaflet-stub.js') });
+    await p.goto(`${BASE}/index.html`); await ready(p);
+    const pins = () => p.evaluate(() => window.__pins.map(x => ({
+      cls: (x.html.match(/class="pin ([^"]*)"/) || [])[1],
+      hasText: /<span|>[^<]+</.test(x.html.replace(/<div[^>]*>|<\/div>/g, '').trim()),
+      tip: x.tooltip
+    })));
+
+    eq('5.5-1 처음에는 핀이 하나도 없음', (await pins()).length, 0);
+
+    await p.click('#listToggle'); await p.waitForTimeout(200);
+    await p.click('#list li[data-id="165"] button.item-main'); await p.waitForTimeout(400);
+    let cur = await pins();
+    eq('5.5-2 장비를 선택하면 핀 1개', cur.length, 1);
+    eq('5.5-3 선택 핀 모양', cur[0].cls, 'pin-sel');
+    eq('5.5-4 선택 핀 말풍선', cur[0].tip, '목포');
+    ok('5.5-5 핀에 글씨 없음', cur.every(x => !x.hasText), JSON.stringify(cur));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+    eq('5.5-6 상세를 닫아도 위치 핀은 남음', (await pins()).length, 1);
+
+    await p.locator('#list li[data-id="168"] button.pick').click(); await p.waitForTimeout(250);
+    cur = await pins();
+    eq('5.5-7 출장지 담으면 사무실+출장지+선택 = 3개', cur.length, 3);
+    eq('5.5-8 사무실 핀', cur.filter(x => x.cls === 'pin-office').length, 1);
+    eq('5.5-9 출장지 핀', cur.filter(x => x.cls === 'pin-pick').length, 1);
+    ok('5.5-10 전부 글씨 없음', cur.every(x => !x.hasText), JSON.stringify(cur));
+
+    // 선택한 장비를 그대로 담으면 핀이 겹쳐 늘지 않아야 한다
+    await p.locator('#list li[data-id="165"] button.pick').click(); await p.waitForTimeout(250);
+    cur = await pins();
+    eq('5.5-11 선택 장비를 담아도 핀 중복 없음', cur.length, 3);
+    eq('5.5-12 담긴 선택 핀 말풍선', cur.find(x => x.cls === 'pin-sel').tip, '목포 · 출장지');
+
+    await p.locator('#list li[data-id="168"] button.pick').click(); await p.waitForTimeout(250);
+    await p.locator('#list li[data-id="165"] button.pick').click(); await p.waitForTimeout(250);
+    cur = await pins();
+    eq('5.5-13 출장지를 모두 빼면 선택 핀만 남음', cur.length, 1);
+    eq('5.5-14 사무실 핀도 사라짐', cur.filter(x => x.cls === 'pin-office').length, 0);
+    await p.close();
+  }
+
   /* ───────── 6. 경로 — 도로 계산 ───────── */
   {
     const p = await newPage();
