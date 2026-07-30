@@ -197,6 +197,9 @@ try {
     const info = await p.$eval('#sheetBody', n => n.innerText);
     ok('4-4 상세에 지점번호·좌표', info.includes('156') && info.includes('35.1729, 126.8916'));
     ok('4-5 길안내는 현위치 출발 표기', info.includes('길안내 (현위치 출발)'));
+    const navHref = decodeURIComponent(await p.$eval('.sheet-btns a', n => n.getAttribute('href')));
+    ok('4-5b 상세 길안내는 도착지 좌표만 지정',
+      navHref === 'https://map.naver.com/p/directions/-/126.89156,35.17294,광주,,/-/car', navHref);
 
     await p.keyboard.press('Escape'); await p.waitForTimeout(300);
     ok('4-6 ESC로 닫힘', !(await p.$eval('#sheet', n => n.classList.contains('show'))));
@@ -316,20 +319,17 @@ try {
     ok('6-9 구간이 끊김 없이 이어짐', chain.every((c, i) => i === 0 || chain[i - 1][1] === c[0]), JSON.stringify(chain));
 
     const hrefs = await p.$$eval('.leg-nav', ns => ns.map(n => decodeURIComponent(n.getAttribute('href'))));
-    const addrOf = await p.evaluate(() => {
-      const clean = a => (a || '').replace(/\([^)]*\)/g, ' ').split(',')[0].replace(/\s+/g, ' ').trim();
-      const m = {}; state.stations.forEach(s => m[s.name] = clean(s.address));
-      m[CONFIG.office.name] = clean(CONFIG.office.address); return m;
+    const coordOf = await p.evaluate(() => {
+      const m = {}; state.stations.forEach(s => m[s.name] = [s.lat, s.lon]);
+      m[CONFIG.office.name] = [CONFIG.office.lat, CONFIG.office.lon]; return m;
     });
-    ok('6-10 길안내가 이름이 아닌 주소로 검색', hrefs.every((h, i) => {
+    ok('6-10 길안내 링크의 출발·도착 좌표 일치', hrefs.every((h, i) => {
       const [from, to] = chain[i];
-      return h.includes(`sName=${addrOf[from]}`) && h.includes(`eName=${addrOf[to]}`);
+      return h.includes(`/directions/${coordOf[from][1]},${coordOf[from][0]},${from},,/`)
+          && h.includes(`/${coordOf[to][1]},${coordOf[to][0]},${to},,/`);
     }), hrefs[1]);
-    ok('6-11 카카오맵 길찾기 형식',
-      hrefs.every(h => h.startsWith('https://map.kakao.com/?sName=') && h.includes('&eName=')), hrefs[0]);
-    ok('6-11b 주소에서 괄호·쉼표 뒷부분 제거',
-      hrefs.some(h => h.includes('sName=전라남도 목포시 고하대로 815&')) ||
-      hrefs.some(h => h.includes('eName=전라남도 목포시 고하대로 815')), hrefs.join(' | '));
+    ok('6-11 네이버지도 자동차 길찾기 형식',
+      hrefs.every(h => h.startsWith('https://map.naver.com/p/directions/') && h.endsWith('/-/car')), hrefs[0]);
 
     // 화면에 표시된 순서가 정말 최단인지 완전탐색으로 대조
     const optimal = await p.evaluate(() => {
@@ -374,6 +374,14 @@ try {
       .filter(x => !x.q || x.q === x.name || x.q.length < 6));
     eq('6.5-1 주소로 검색어를 못 만드는 지점 없음', bad, []);
     eq('6.5-2 사무실 검색어', await p.evaluate(() => navQuery(CONFIG.office)), '광주광역시 북구 서암대로 71');
+    // navProvider를 kakao로 바꿔도 링크가 만들어지는지
+    const kakao = await p.evaluate(() => {
+      CONFIG.navProvider = 'kakao';
+      const s = state.stations.find(x => x.id === '165');
+      return { leg: navLink(CONFIG.office, s), to: navToLink(s) };
+    });
+    ok('6.5-3 kakao로 바꾸면 주소 검색 링크', kakao.leg.startsWith('https://map.kakao.com/?sName='), kakao.leg);
+    ok('6.5-4 kakao 상세 링크', kakao.to.startsWith('https://map.kakao.com/link/to/'), kakao.to);
     await p.close();
   }
 
