@@ -47,6 +47,8 @@ const FIXTURE_CSV = `station_id,name,lat,lon,address,last_check,cycle_months,pan
 906,좌표오류테스트,없음,없음,광주 테스트,${iso(today)},6,,좌표 파싱 불가
 907,"인용부호,쉼표테스트",35.15,126.95,"광주 테스트, 쉼표 포함 주소",${iso(today)},6,,
 908,<b>이스케이프</b>,35.16,126.96,광주 테스트,${iso(today)},6,,
+909,외부주소사진,35.17,126.97,광주 테스트,${iso(today)},6,https://example.test/pano/909.jpg,사진을 다른 서버에 둔 경우
+910,폴더사진,35.18,126.98,광주 테스트,${iso(today)},6,910.jpg,저장소 폴더에 둔 경우
 `;
 
 /* 해양장비 시험 데이터 — 선박·육상·업체 세 가지 접근 방식을 모두 담습니다. */
@@ -194,8 +196,8 @@ try {
     const filt = async f => { await p.click(`#chips button[data-f="${f}"]`); await p.waitForTimeout(200); return p.$$eval('#list li.item', n => n.length); };
     eq('3-9 필터 점검필요', await filt('due'), 1);
     eq('3-10 필터 곧 도래', await filt('soon'), 1);
-    eq('3-11 필터 정상', await filt('ok'), 4);
-    eq('3-12 필터 전체', await filt('all'), 8);
+    eq('3-11 필터 정상', await filt('ok'), 6);
+    eq('3-12 필터 전체', await filt('all'), 10);
     await p.close();
   }
 
@@ -593,6 +595,33 @@ try {
       (await p2.$eval('#routeResult', n => n.innerText)).includes('직선거리'), '');
     eq('13-7 자바스크립트 오류 없음', errs2, []);
     await p2.close();
+    await p.close();
+  }
+
+  /* ───────── 14. 사진을 다른 서버에 둔 경우 ───────── */
+  {
+    const p = await newPage();
+    // 바깥 사진 요청은 실제로 나가지 않게 가로채 1x1 그림으로 응답합니다.
+    const asked = [];
+    await p.route('https://example.test/**', async r => {
+      asked.push(r.request().url());
+      await r.fulfill({ status: 200, contentType: 'image/gif',
+        body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64') });
+    });
+    await p.goto(`${BASE}/__fixture/index.html`); await ready(p);
+    await p.click('#listToggle'); await p.waitForTimeout(250);
+
+    await p.click('#list li[data-id="909"] button.item-main'); await p.waitForTimeout(300);
+    await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(900);
+    const bg1 = await p.$eval('#pano', n => getComputedStyle(n).backgroundImage);
+    ok('14-1 http 주소는 그대로 사용', bg1.includes('https://example.test/pano/909.jpg'), bg1);
+    ok('14-2 실제로 그 주소를 요청', asked.some(u => u.endsWith('/pano/909.jpg')), asked.join(' '));
+
+    await p.click('#list li[data-id="910"] button.item-main'); await p.waitForTimeout(300);
+    await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(900);
+    const wrap = await p.$eval('#panoWrap', n => n.innerHTML + n.innerText);
+    ok('14-3 파일명만 적으면 panoramas 폴더에서 찾음',
+      wrap.includes('panoramas/910.jpg'), wrap.slice(0, 140));
     await p.close();
   }
 
