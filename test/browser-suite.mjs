@@ -204,6 +204,10 @@ try {
   /* ───────── 4. 목록·상세·파노라마 ───────── */
   {
     const p = await newPage();
+    // 파노라마는 기상청 서버에 있습니다. 시험에서는 저장소의 샘플 그림으로 대신 응답합니다.
+    const sample = await fsp.readFile(path.join(ROOT, 'panoramas', '156.svg'));
+    await p.route('https://www.kma.go.kr/gwangju/panoramas/**',
+      r => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: sample }));
     await p.goto(`${BASE}/index.html`); await ready(p);
     ok('4-1 목록 기본 접힘', await p.$eval('#listBox', n => n.hidden));
     await p.click('#listToggle'); await p.waitForTimeout(200);
@@ -232,7 +236,8 @@ try {
       const el = document.getElementById('pano');
       return { exists: !!el, bg: el ? getComputedStyle(el).backgroundImage : '', pick: document.getElementById('panoPick').innerText };
     });
-    ok('4-8 파노라마 렌더링', pano.exists && pano.bg.includes('156.svg'), pano.bg.slice(0, 70));
+    ok('4-8 파노라마 렌더링', pano.exists && pano.bg.includes('kma.go.kr/gwangju/panoramas/156.jpg'),
+      pano.bg.slice(0, 90));
     eq('4-9 선택된 장비 표기', pano.pick, '선택된 장비: 광주');
     const before = await p.$eval('#pano', n => getComputedStyle(n).backgroundPositionX);
     await p.mouse.move(200, 400); await p.mouse.down(); await p.mouse.move(80, 400, { steps: 8 }); await p.mouse.up();
@@ -240,9 +245,15 @@ try {
     const after = await p.$eval('#pano', n => getComputedStyle(n).backgroundPositionX);
     ok('4-10 파노라마 드래그로 회전', before !== after, `${before} → ${after}`);
 
+    // 사진을 못 받아오는 지점은 오류가 아니라 '아직 없음'으로 보여야 합니다
+    await p.unroute('https://www.kma.go.kr/gwangju/panoramas/**');
+    await p.route('https://www.kma.go.kr/gwangju/panoramas/**', r => r.fulfill({ status: 404, body: '' }));
     await p.click('#list li[data-id="165"] button.item-main'); await p.waitForTimeout(400);
-    await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(600);
-    ok('4-11 파노라마 미등록 안내', (await p.$eval('#panoWrap', n => n.innerText)).includes('촬영 예정입니다'));
+    await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(700);
+    const miss = await p.$eval('#panoWrap', n => n.innerText);
+    ok('4-11 사진이 없으면 오류가 아닌 안내로 표시',
+      miss.includes('아직 등록된 사진이 없습니다') && !/오류|실패/.test(miss), miss.replace(/\n/g, ' '));
+    ok('4-12 확인용 주소 함께 표시', miss.includes('kma.go.kr/gwangju/panoramas/165.jpg'), '');
     await p.close();
   }
 
@@ -575,7 +586,7 @@ try {
     await p.locator('#list li button.pick').first().click(); await p.waitForTimeout(200);
     await p.click('#calcBtn'); await p.waitForSelector('.route-total', { timeout: 20000 });
     const hosts = [...new Set(external)].sort();
-    eq('13-1 외부 요청은 지도 타일과 경로 서버뿐', hosts,
+    eq('13-1 첫 화면의 외부 요청은 지도 타일과 경로 서버뿐', hosts,
       ['https://router.project-osrm.org', 'https://tile.openstreetmap.org']);
     ok('13-2 지도 라이브러리는 저장소 안에서 로드',
       (await p.evaluate(() => typeof L !== 'undefined')), '');
@@ -620,8 +631,8 @@ try {
     await p.click('#list li[data-id="910"] button.item-main'); await p.waitForTimeout(300);
     await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(900);
     const wrap = await p.$eval('#panoWrap', n => n.innerHTML + n.innerText);
-    ok('14-3 파일명만 적으면 panoramas 폴더에서 찾음',
-      wrap.includes('panoramas/910.jpg'), wrap.slice(0, 140));
+    ok('14-3 파일명만 적으면 기본 경로에 이어 붙음',
+      wrap.includes('kma.go.kr/gwangju/panoramas/910.jpg'), wrap.slice(0, 200));
     await p.close();
   }
 
