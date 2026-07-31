@@ -66,10 +66,14 @@ await fsp.writeFile(path.join(FIX, 'data', 'stations.csv'), FIXTURE_CSV);
 await fsp.writeFile(path.join(FIX, 'data', 'marine.csv'), FIXTURE_MARINE);
 
 /* ── 정적 서버 (저장소 루트 + /__fixture) ── */
-const MIME = { '.html': 'text/html; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.svg': 'image/svg+xml',
+  '.json': 'application/json', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
   let url = decodeURIComponent(req.url.split('?')[0]);
-  const base = url.startsWith('/__fixture') ? (url = url.slice('/__fixture'.length) || '/', FIX) : ROOT;
+  // 픽스처 페이지도 저장소의 vendor/ 파일을 그대로 씁니다.
+  const inFixture = url.startsWith('/__fixture');
+  if (inFixture) url = url.slice('/__fixture'.length) || '/';
+  const base = inFixture && !url.startsWith('/vendor/') ? FIX : ROOT;
   const file = path.join(base, url === '/' ? 'index.html' : url);
   if (!file.startsWith(base)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (err, buf) => {
@@ -257,42 +261,40 @@ try {
   }
 
   /* ───────── 5.5 지도 핀 ─────────
-     이 환경에서는 Leaflet CDN이 막혀 실제 지도를 못 띄우므로,
-     test/leaflet-stub.js로 대신하고 '어떤 핀이 올라갔는지'만 확인합니다. */
+     지도 라이브러리를 저장소 안에 두었으므로 실제 Leaflet으로 확인합니다.
+     (배경 타일만 외부에서 받아오며, 없어도 핀은 그려집니다) */
   {
     const p = await newPage();
-    await p.addInitScript({ path: path.join(ROOT, 'test', 'leaflet-stub.js') });
     await p.goto(`${BASE}/index.html`); await ready(p);
-    const pins = () => p.evaluate(() => window.__pins.map(x => ({
-      cls: (x.html.match(/class="pin ([^"]*)"/) || [])[1],
-      hasText: /<span|>[^<]+</.test(x.html.replace(/<div[^>]*>|<\/div>/g, '').trim()),
-      tip: x.tooltip
-    })));
+    await p.waitForTimeout(400);
+    const pins = () => p.evaluate(() => [...document.querySelectorAll('.leaflet-marker-icon .pin')]
+      .map(n => ({ cls: [...n.classList].filter(c => c !== 'pin').join(' '), text: n.textContent.trim() })));
+    const tip = id => p.evaluate(i => state.markers[i]?.getTooltip()?.getContent() ?? null, id);
 
+    ok('5.5-0 Leaflet이 저장소에서 로드됨', await p.evaluate(() => typeof L !== 'undefined' && !!state.map));
     eq('5.5-1 처음에는 핀이 하나도 없음', (await pins()).length, 0);
 
     await p.click('#listToggle'); await p.waitForTimeout(200);
-    await p.click('#list li[data-id="165"] button.item-main'); await p.waitForTimeout(400);
+    await p.click('#list li[data-id="165"] button.item-main'); await p.waitForTimeout(500);
     let cur = await pins();
     eq('5.5-2 장비를 선택하면 핀 1개', cur.length, 1);
     eq('5.5-3 선택 핀 모양', cur[0].cls, 'pin-sel');
-    eq('5.5-4 선택 핀 말풍선', cur[0].tip, '목포');
-    ok('5.5-5 핀에 글씨 없음', cur.every(x => !x.hasText), JSON.stringify(cur));
+    eq('5.5-4 선택 핀 말풍선', await tip('165'), '목포');
+    ok('5.5-5 핀에 글씨 없음', cur.every(x => x.text === ''), JSON.stringify(cur));
     await p.keyboard.press('Escape'); await p.waitForTimeout(300);
     eq('5.5-6 상세를 닫아도 위치 핀은 남음', (await pins()).length, 1);
 
-    await p.locator('#list li[data-id="168"] button.pick').click(); await p.waitForTimeout(250);
+    await p.locator('#list li[data-id="168"] button.pick').click(); await p.waitForTimeout(300);
     cur = await pins();
     eq('5.5-7 출장지 담으면 사무실+출장지+선택 = 3개', cur.length, 3);
     eq('5.5-8 사무실 핀', cur.filter(x => x.cls === 'pin-office').length, 1);
     eq('5.5-9 출장지 핀', cur.filter(x => x.cls === 'pin-pick').length, 1);
-    ok('5.5-10 전부 글씨 없음', cur.every(x => !x.hasText), JSON.stringify(cur));
+    ok('5.5-10 전부 글씨 없음', cur.every(x => x.text === ''), JSON.stringify(cur));
 
     // 선택한 장비를 그대로 담으면 핀이 겹쳐 늘지 않아야 한다
-    await p.locator('#list li[data-id="165"] button.pick').click(); await p.waitForTimeout(250);
-    cur = await pins();
-    eq('5.5-11 선택 장비를 담아도 핀 중복 없음', cur.length, 3);
-    eq('5.5-12 담긴 선택 핀 말풍선', cur.find(x => x.cls === 'pin-sel').tip, '목포 · 출장지');
+    await p.locator('#list li[data-id="165"] button.pick').click(); await p.waitForTimeout(300);
+    eq('5.5-11 선택 장비를 담아도 핀 중복 없음', (await pins()).length, 3);
+    eq('5.5-12 담긴 선택 핀 말풍선', await tip('165'), '목포 · 출장지');
 
     await p.locator('#list li[data-id="168"] button.pick').click(); await p.waitForTimeout(250);
     await p.locator('#list li[data-id="165"] button.pick').click(); await p.waitForTimeout(250);
@@ -467,7 +469,6 @@ try {
   /* ───────── 11. 해양장비 탭 ───────── */
   {
     const p = await newPage();
-    await p.addInitScript({ path: path.join(ROOT, 'test', 'leaflet-stub.js') });
     await stubOsrm(p, null);
     await p.goto(`${BASE}/__fixture/index.html`); await ready(p);
 
@@ -516,9 +517,10 @@ try {
     ok('11-20 항구 길안내는 항구 좌표로', navs[0].includes('126.378,34.785,목포항,,'), navs[0]);
 
     // 지도 핀
-    const pins = await p.evaluate(() => window.__pins.map(x => (x.html.match(/class="pin ([^"]*)"/) || [])[1]));
+    const pins = await p.evaluate(() => [...document.querySelectorAll('.leaflet-marker-icon .pin')]
+      .map(n => [...n.classList].filter(c => c !== 'pin').join(' ')));
     eq('11-21 출항 항구 핀', pins.filter(c => c === 'pin-port').length, 1);
-    ok('11-22 사무실 핀', pins.includes('pin-office'));
+    ok('11-22 사무실 핀', pins.includes('pin-office'), pins.join(' '));
 
     // 상세
     await p.locator('.port-list .step-link').first().click(); await p.waitForTimeout(500);
@@ -555,6 +557,42 @@ try {
       await p.click('#tabs .tab[data-tab="land"]'); await p.waitForTimeout(400);
       return (await p.$$eval('#list li.item', n => n.length)) >= 0;
     })());
+    await p.close();
+  }
+
+  /* ───────── 13. 외부 의존성 ───────── */
+  {
+    const p = await newPage();
+    const external = [];
+    p.on('request', r => {
+      const u = new URL(r.url());
+      if (!['127.0.0.1', 'localhost'].includes(u.hostname)) external.push(u.origin);
+    });
+    await p.goto(`${BASE}/index.html`); await ready(p);
+    await p.click('#listToggle'); await p.waitForTimeout(300);
+    await p.locator('#list li button.pick').first().click(); await p.waitForTimeout(200);
+    await p.click('#calcBtn'); await p.waitForSelector('.route-total', { timeout: 20000 });
+    const hosts = [...new Set(external)].sort();
+    eq('13-1 외부 요청은 지도 타일과 경로 서버뿐', hosts,
+      ['https://router.project-osrm.org', 'https://tile.openstreetmap.org']);
+    ok('13-2 지도 라이브러리는 저장소 안에서 로드',
+      (await p.evaluate(() => typeof L !== 'undefined')), '');
+    ok('13-3 CDN 요청 없음', !hosts.some(h => /unpkg|cdn|jsdelivr/.test(h)), hosts.join(' '));
+
+    // 외부를 전부 막아도 목록·경로가 동작하는지
+    const p2 = await newPage();
+    await p2.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, r => r.abort());
+    const errs2 = []; p2.on('pageerror', e => errs2.push(String(e)));
+    await p2.goto(`${BASE}/index.html`); await ready(p2);
+    ok('13-4 외부 차단해도 지도 라이브러리 동작', await p2.evaluate(() => typeof L !== 'undefined'));
+    await p2.click('#listToggle'); await p2.waitForTimeout(300);
+    ok('13-5 외부 차단해도 목록 표시', (await p2.$$eval('#list li.item', n => n.length)) > 0);
+    await p2.locator('#list li button.pick').first().click(); await p2.waitForTimeout(200);
+    await p2.click('#calcBtn'); await p2.waitForSelector('.route-total', { timeout: 20000 });
+    ok('13-6 외부 차단해도 경로 계산(직선 폴백)',
+      (await p2.$eval('#routeResult', n => n.innerText)).includes('직선거리'), '');
+    eq('13-7 자바스크립트 오류 없음', errs2, []);
+    await p2.close();
     await p.close();
   }
 

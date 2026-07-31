@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>광주·전남 AWS 기상관측망 관리</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<!-- 지도 라이브러리는 저장소 안에 두었습니다. 외부 접속이 막힌 곳에서도 지도가 뜹니다. -->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <style>
 /* ===== 기본 설정 ===== */
 :root{
@@ -394,7 +395,7 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
   <div id="sheetBody"></div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script>
 /* =========================================================
    설정값 — 운영 전 이 부분만 실제 값으로 바꾸면 됩니다.
@@ -417,6 +418,13 @@ const CONFIG = {
 
   // 해상 기상 확인용 링크 — 출항 전 파고·풍속 확인
   seaForecastUrl: 'https://www.weather.go.kr/w/ocean/marine/forecast.do',
+
+  /* 지도 배경 타일. 지도에서 유일하게 외부에서 받아오는 부분입니다.
+     사내망에서 외부가 막혀 있으면 기관 내부 타일 서버 주소로 바꾸세요.
+     타일을 못 받으면 지도만 비고 목록·경로·상세는 그대로 동작합니다. */
+  tileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  tileMaxZoom: 18,
+  tileAttribution: '&copy; OpenStreetMap',
 
   // 길안내 버튼이 열 지도앱 — 'naver' 또는 'kakao'
   navProvider: 'naver',
@@ -682,7 +690,7 @@ const state = { tab:'land',
                 stations:[], marine:[], marineLoaded:false,
                 filter:'all', kind:'all', query:'', mode:'all', listOpen:false,
                 picked:[], selected:null,
-                map:null, markerLayer:null, markers:{}, bounds:null, pano:null };
+                map:null, mapCleanup:null, markerLayer:null, markers:{}, bounds:null, pano:null };
 
 // 지금 탭에서 다루는 장비 목록
 function items(){ return state.tab==='marine' ? state.marine : state.stations; }
@@ -967,10 +975,14 @@ function initMap(){
     document.getElementById('mapFail').style.display='block';
     return;
   }
-  const pts=state.stations.filter(s=>s.valid);
-  state.map=L.map(el,{scrollWheelZoom:false}).setView([36.4,127.9],6.4);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    maxZoom:18, attribution:'&copy; OpenStreetMap'
+  // 탭을 바꾸면 이 함수가 다시 불립니다. 앞서 만든 지도를 확실히 정리해 둡니다.
+  if(state.mapCleanup){ state.mapCleanup(); state.mapCleanup=null; }
+
+  const pts=items().filter(s=>s.valid);
+  const map=L.map(el,{scrollWheelZoom:false}).setView([36.4,127.9],6.4);
+  state.map=map;
+  L.tileLayer(CONFIG.tileUrl,{
+    maxZoom:CONFIG.tileMaxZoom, attribution:CONFIG.tileAttribution
   }).addTo(state.map);
 
   // 핀은 처음에 하나도 두지 않습니다. 선택한 장비와 출장지만 syncMarkers가 올립니다.
@@ -980,16 +992,24 @@ function initMap(){
   // 컨테이너 크기가 확정된 뒤 '한 번만' 범위를 맞춥니다.
   // (fitBounds를 여러 번 겹쳐 부르면 타일 격자가 어긋나 지도 일부가 비어 보입니다)
   state.bounds = pts.length ? L.latLngBounds(pts.map(s=>[s.lat,s.lon])).pad(0.12) : null;
-  setTimeout(()=>{
-    state.map.invalidateSize({animate:false});
-    if(state.bounds) state.map.fitBounds(state.bounds,{animate:false});
+  const fitT=setTimeout(()=>{
+    map.invalidateSize({animate:false});
+    if(state.bounds) map.fitBounds(state.bounds,{animate:false});
   },80);
 
   // 화면 회전·크기 변경 대응 (연속 호출은 묶어서 한 번만)
   let rzT=null;
-  const onResize=()=>{ clearTimeout(rzT); rzT=setTimeout(()=>state.map.invalidateSize({animate:false}),150); };
-  if(window.ResizeObserver) new ResizeObserver(onResize).observe(el);
+  const onResize=()=>{ clearTimeout(rzT); rzT=setTimeout(()=>map.invalidateSize({animate:false}),150); };
+  const ro = window.ResizeObserver ? new ResizeObserver(onResize) : null;
+  if(ro) ro.observe(el);
   window.addEventListener('orientationchange',onResize);
+
+  state.mapCleanup=()=>{
+    clearTimeout(fitT); clearTimeout(rzT);
+    if(ro) ro.disconnect();
+    window.removeEventListener('orientationchange',onResize);
+    map.remove();
+  };
 }
 
 /* 지도 핀을 다시 그립니다 — 선택한 장비 + 출장지로 담은 장비(+사무실)만 올립니다.
@@ -1023,17 +1043,18 @@ function syncMarkers(){
     }
   }
 
+  const pickLabel = state.tab==='marine' ? '점검 대상' : '출장지';
   for(const id of state.picked){
     if(id===state.selected) continue;                 // 선택 핀으로 대신 표시
     const s=items().find(x=>x.id===id);
-    if(s && s.valid) state.markers[id]=put(s.lat,s.lon,'pin-pick',`${s.name} · 점검 대상`,()=>openSheet(s.id),28);
+    if(s && s.valid) state.markers[id]=put(s.lat,s.lon,'pin-pick',`${s.name} · ${pickLabel}`,()=>openSheet(s.id),28);
   }
 
   const sel=items().find(x=>x.id===state.selected);
   if(sel && sel.valid){
     const picked=state.picked.includes(sel.id);
     state.markers[sel.id]=put(sel.lat,sel.lon,'pin-sel',
-      picked?`${sel.name} · 출장지`:sel.name, ()=>openSheet(sel.id), 34);
+      picked?`${sel.name} · ${pickLabel}`:sel.name, ()=>openSheet(sel.id), 34);
   }
 }
 
@@ -1534,7 +1555,7 @@ document.getElementById('tabs').addEventListener('click',e=>{
   state.tab=b.dataset.tab;
   [...document.querySelectorAll('#tabs .tab')].forEach(t=>t.setAttribute('aria-pressed', String(t===b)));
   Object.assign(state,{ filter:'all', kind:'all', query:'', mode:'all', listOpen:false,
-                        picked:[], selected:null, map:null, markerLayer:null, markers:{}, bounds:null });
+                        picked:[], selected:null, markerLayer:null, markers:{}, bounds:null });
   closeSheet();
   render();
   window.scrollTo({top:0,behavior:'smooth'});
