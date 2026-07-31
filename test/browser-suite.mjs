@@ -47,18 +47,35 @@ const FIXTURE_CSV = `station_id,name,lat,lon,address,last_check,cycle_months,pan
 906,좌표오류테스트,없음,없음,광주 테스트,${iso(today)},6,,좌표 파싱 불가
 907,"인용부호,쉼표테스트",35.15,126.95,"광주 테스트, 쉼표 포함 주소",${iso(today)},6,,
 908,<b>이스케이프</b>,35.16,126.96,광주 테스트,${iso(today)},6,,
+909,외부주소사진,35.17,126.97,광주 테스트,${iso(today)},6,https://example.test/pano/909.jpg,사진을 다른 서버에 둔 경우
+910,폴더사진,35.18,126.98,광주 테스트,${iso(today)},6,910.jpg,저장소 폴더에 둔 경우
+`;
+
+/* 해양장비 시험 데이터 — 선박·육상·업체 세 가지 접근 방식을 모두 담습니다. */
+const FIXTURE_MARINE = `station_id,name,kind,lat,lon,sea_area,access,port,port_address,port_lat,port_lon,boat_min,wave_limit,vendor,vendor_tel,last_check,cycle_months,photo,note
+22101,칠발도,부이,34.79300,125.77700,서해남부 먼바다,선박,목포항,전라남도 목포시 해안로 182,34.78500,126.37800,180,1.5,,,${iso(today)},12,,계류 점검 포함
+22103,신안,부이,34.68000,125.90000,서해남부 앞바다,선박,목포항,전라남도 목포시 해안로 182,34.78500,126.37800,120,2.0,,,${iso(today)},12,,
+22102,거문도,부이,34.00100,127.50000,남해서부 먼바다,선박,여수항,전라남도 여수시 종화동 458,34.73800,127.75200,240,1.5,,,${iso(today)},12,,
+22201,가거도등표,등표,34.05000,125.10000,서해남부 먼바다,업체,,,,,,1.0,해양장비유지보수(주),061-000-0000,${iso(today)},6,,업체 정기점검
+22301,목포항파고,파고,34.77000,126.36000,목포항,육상,,,,,,,,,${iso(today)},6,,방파제 끝단 도보 접근
+22401,여수연안방재,연안,34.74500,127.74000,여수 연안,육상,,,,,,,,,${iso(today)},6,,
 `;
 
 const FIX = await fsp.mkdtemp(path.join(os.tmpdir(), 'aws-fixture-'));
 await fsp.mkdir(path.join(FIX, 'data'), { recursive: true });
 await fsp.copyFile(path.join(ROOT, 'index.html'), path.join(FIX, 'index.html'));
 await fsp.writeFile(path.join(FIX, 'data', 'stations.csv'), FIXTURE_CSV);
+await fsp.writeFile(path.join(FIX, 'data', 'marine.csv'), FIXTURE_MARINE);
 
 /* ── 정적 서버 (저장소 루트 + /__fixture) ── */
-const MIME = { '.html': 'text/html; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.svg': 'image/svg+xml',
+  '.json': 'application/json', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
   let url = decodeURIComponent(req.url.split('?')[0]);
-  const base = url.startsWith('/__fixture') ? (url = url.slice('/__fixture'.length) || '/', FIX) : ROOT;
+  // 픽스처 페이지도 저장소의 vendor/ 파일을 그대로 씁니다.
+  const inFixture = url.startsWith('/__fixture');
+  if (inFixture) url = url.slice('/__fixture'.length) || '/';
+  const base = inFixture && !url.startsWith('/vendor/') ? FIX : ROOT;
   const file = path.join(base, url === '/' ? 'index.html' : url);
   if (!file.startsWith(base)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (err, buf) => {
@@ -179,14 +196,18 @@ try {
     const filt = async f => { await p.click(`#chips button[data-f="${f}"]`); await p.waitForTimeout(200); return p.$$eval('#list li.item', n => n.length); };
     eq('3-9 필터 점검필요', await filt('due'), 1);
     eq('3-10 필터 곧 도래', await filt('soon'), 1);
-    eq('3-11 필터 정상', await filt('ok'), 4);
-    eq('3-12 필터 전체', await filt('all'), 8);
+    eq('3-11 필터 정상', await filt('ok'), 6);
+    eq('3-12 필터 전체', await filt('all'), 10);
     await p.close();
   }
 
   /* ───────── 4. 목록·상세·파노라마 ───────── */
   {
     const p = await newPage();
+    // 파노라마는 기상청 서버에 있습니다. 시험에서는 저장소의 샘플 그림으로 대신 응답합니다.
+    const sample = await fsp.readFile(path.join(ROOT, 'panoramas', '156.svg'));
+    await p.route('https://www.kma.go.kr/gwangju/panoramas/**',
+      r => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: sample }));
     await p.goto(`${BASE}/index.html`); await ready(p);
     ok('4-1 목록 기본 접힘', await p.$eval('#listBox', n => n.hidden));
     await p.click('#listToggle'); await p.waitForTimeout(200);
@@ -215,7 +236,8 @@ try {
       const el = document.getElementById('pano');
       return { exists: !!el, bg: el ? getComputedStyle(el).backgroundImage : '', pick: document.getElementById('panoPick').innerText };
     });
-    ok('4-8 파노라마 렌더링', pano.exists && pano.bg.includes('156.svg'), pano.bg.slice(0, 70));
+    ok('4-8 파노라마 렌더링', pano.exists && pano.bg.includes('kma.go.kr/gwangju/panoramas/156.jpg'),
+      pano.bg.slice(0, 90));
     eq('4-9 선택된 장비 표기', pano.pick, '선택된 장비: 광주');
     const before = await p.$eval('#pano', n => getComputedStyle(n).backgroundPositionX);
     await p.mouse.move(200, 400); await p.mouse.down(); await p.mouse.move(80, 400, { steps: 8 }); await p.mouse.up();
@@ -223,9 +245,15 @@ try {
     const after = await p.$eval('#pano', n => getComputedStyle(n).backgroundPositionX);
     ok('4-10 파노라마 드래그로 회전', before !== after, `${before} → ${after}`);
 
+    // 사진을 못 받아오는 지점은 오류가 아니라 '아직 없음'으로 보여야 합니다
+    await p.unroute('https://www.kma.go.kr/gwangju/panoramas/**');
+    await p.route('https://www.kma.go.kr/gwangju/panoramas/**', r => r.fulfill({ status: 404, body: '' }));
     await p.click('#list li[data-id="165"] button.item-main'); await p.waitForTimeout(400);
-    await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(600);
-    ok('4-11 파노라마 미등록 안내', (await p.$eval('#panoWrap', n => n.innerText)).includes('촬영 예정입니다'));
+    await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(700);
+    const miss = await p.$eval('#panoWrap', n => n.innerText);
+    ok('4-11 사진이 없으면 오류가 아닌 안내로 표시',
+      miss.includes('아직 등록된 사진이 없습니다') && !/오류|실패/.test(miss), miss.replace(/\n/g, ' '));
+    ok('4-12 확인용 주소 함께 표시', miss.includes('kma.go.kr/gwangju/panoramas/165.jpg'), '');
     await p.close();
   }
 
@@ -246,42 +274,40 @@ try {
   }
 
   /* ───────── 5.5 지도 핀 ─────────
-     이 환경에서는 Leaflet CDN이 막혀 실제 지도를 못 띄우므로,
-     test/leaflet-stub.js로 대신하고 '어떤 핀이 올라갔는지'만 확인합니다. */
+     지도 라이브러리를 저장소 안에 두었으므로 실제 Leaflet으로 확인합니다.
+     (배경 타일만 외부에서 받아오며, 없어도 핀은 그려집니다) */
   {
     const p = await newPage();
-    await p.addInitScript({ path: path.join(ROOT, 'test', 'leaflet-stub.js') });
     await p.goto(`${BASE}/index.html`); await ready(p);
-    const pins = () => p.evaluate(() => window.__pins.map(x => ({
-      cls: (x.html.match(/class="pin ([^"]*)"/) || [])[1],
-      hasText: /<span|>[^<]+</.test(x.html.replace(/<div[^>]*>|<\/div>/g, '').trim()),
-      tip: x.tooltip
-    })));
+    await p.waitForTimeout(400);
+    const pins = () => p.evaluate(() => [...document.querySelectorAll('.leaflet-marker-icon .pin')]
+      .map(n => ({ cls: [...n.classList].filter(c => c !== 'pin').join(' '), text: n.textContent.trim() })));
+    const tip = id => p.evaluate(i => state.markers[i]?.getTooltip()?.getContent() ?? null, id);
 
+    ok('5.5-0 Leaflet이 저장소에서 로드됨', await p.evaluate(() => typeof L !== 'undefined' && !!state.map));
     eq('5.5-1 처음에는 핀이 하나도 없음', (await pins()).length, 0);
 
     await p.click('#listToggle'); await p.waitForTimeout(200);
-    await p.click('#list li[data-id="165"] button.item-main'); await p.waitForTimeout(400);
+    await p.click('#list li[data-id="165"] button.item-main'); await p.waitForTimeout(500);
     let cur = await pins();
     eq('5.5-2 장비를 선택하면 핀 1개', cur.length, 1);
     eq('5.5-3 선택 핀 모양', cur[0].cls, 'pin-sel');
-    eq('5.5-4 선택 핀 말풍선', cur[0].tip, '목포');
-    ok('5.5-5 핀에 글씨 없음', cur.every(x => !x.hasText), JSON.stringify(cur));
+    eq('5.5-4 선택 핀 말풍선', await tip('165'), '목포');
+    ok('5.5-5 핀에 글씨 없음', cur.every(x => x.text === ''), JSON.stringify(cur));
     await p.keyboard.press('Escape'); await p.waitForTimeout(300);
     eq('5.5-6 상세를 닫아도 위치 핀은 남음', (await pins()).length, 1);
 
-    await p.locator('#list li[data-id="168"] button.pick').click(); await p.waitForTimeout(250);
+    await p.locator('#list li[data-id="168"] button.pick').click(); await p.waitForTimeout(300);
     cur = await pins();
     eq('5.5-7 출장지 담으면 사무실+출장지+선택 = 3개', cur.length, 3);
     eq('5.5-8 사무실 핀', cur.filter(x => x.cls === 'pin-office').length, 1);
     eq('5.5-9 출장지 핀', cur.filter(x => x.cls === 'pin-pick').length, 1);
-    ok('5.5-10 전부 글씨 없음', cur.every(x => !x.hasText), JSON.stringify(cur));
+    ok('5.5-10 전부 글씨 없음', cur.every(x => x.text === ''), JSON.stringify(cur));
 
     // 선택한 장비를 그대로 담으면 핀이 겹쳐 늘지 않아야 한다
-    await p.locator('#list li[data-id="165"] button.pick').click(); await p.waitForTimeout(250);
-    cur = await pins();
-    eq('5.5-11 선택 장비를 담아도 핀 중복 없음', cur.length, 3);
-    eq('5.5-12 담긴 선택 핀 말풍선', cur.find(x => x.cls === 'pin-sel').tip, '목포 · 출장지');
+    await p.locator('#list li[data-id="165"] button.pick').click(); await p.waitForTimeout(300);
+    eq('5.5-11 선택 장비를 담아도 핀 중복 없음', (await pins()).length, 3);
+    eq('5.5-12 담긴 선택 핀 말풍선', await tip('165'), '목포 · 출장지');
 
     await p.locator('#list li[data-id="168"] button.pick').click(); await p.waitForTimeout(250);
     await p.locator('#list li[data-id="165"] button.pick').click(); await p.waitForTimeout(250);
@@ -453,6 +479,163 @@ try {
       await p.close();
     }
   }
+  /* ───────── 11. 해양장비 탭 ───────── */
+  {
+    const p = await newPage();
+    await stubOsrm(p, null);
+    await p.goto(`${BASE}/__fixture/index.html`); await ready(p);
+
+    eq('11-1 탭 두 개', await p.$$eval('#tabs .tab', ns => ns.map(n => n.textContent.trim())),
+      ['지상 AWS', '해양장비']);
+    await p.click('#tabs .tab[data-tab="marine"]'); await p.waitForTimeout(400);
+    eq('11-2 해양장비를 읽음', await p.evaluate(() => state.marine.length), 6);
+    eq('11-3 탭 전환 시 담은 목록 초기화', await p.evaluate(() => state.picked.length), 0);
+    ok('11-4 출항 계획 섹션으로 바뀜', !!(await p.$('#seaSec')) && (await p.$eval('#routeSec h2', n => n.textContent)) === '출항 계획');
+    eq('11-5 종류 필터가 실제 있는 종류만',
+      await p.$$eval('#kinds .chip', ns => ns.map(n => n.textContent.trim())),
+      ['전체 종류', '해양기상부이', '등표관측장비', '파고부이·파랑계', '연안·항만']);
+
+    await p.click('#listToggle'); await p.waitForTimeout(250);
+    eq('11-6 목록 건수', await p.$eval('#listCount', n => n.textContent), '6곳');
+    const kind = async k => { await p.click(`#kinds .chip[data-k="${k}"]`); await p.waitForTimeout(200); return p.$$eval('#list li.item', n => n.length); };
+    eq('11-7 종류 필터 부이', await kind('buoy'), 3);
+    eq('11-8 종류 필터 등표', await kind('light'), 1);
+    eq('11-9 종류 필터 전체', await kind('all'), 6);
+
+    const find = async q => { await p.fill('#q', q); await p.waitForTimeout(250); return p.$$eval('#list li.item', n => n.length); };
+    await p.click('#modes .chip[data-m="addr"]'); await p.waitForTimeout(150);
+    eq('11-10 해역·항구 검색 "목포항"', await find('목포항'), 3);   // 목포항 출항 2 + 해역이 목포항 1
+    eq('11-11 해역 검색 "남해서부"', await find('남해서부'), 1);
+    await p.click('#modes .chip[data-m="all"]'); await p.waitForTimeout(150);
+    await find('');
+
+    // 담기 → 출항 계획
+    for (const id of ['22101', '22103', '22201', '22301']) {
+      await p.locator(`#list li[data-id="${id}"] button.pick`).click(); await p.waitForTimeout(150);
+    }
+    eq('11-12 출항 조건은 선박 장비만 반영', await p.$eval('#waveWorst', n => n.textContent), '1.5m 이하');
+    eq('11-13 계산 버튼 문구', await p.$eval('#calcBtn', n => n.textContent.trim()), '4곳 출항 계획 짜기');
+
+    await p.click('#calcBtn'); await p.waitForSelector('.route-total', { timeout: 20000 }); await p.waitForTimeout(300);
+    const cards = await p.$$eval('.port-card .port-head b', ns => ns.map(n => n.textContent.trim()));
+    eq('11-14 같은 항구는 한 묶음, 육상은 따로', cards, ['목포항', '목포항파고']);
+    const txt = await p.$eval('#routeResult', n => n.innerText);
+    ok('11-15 업체 점검 장비는 일정에서 제외', txt.includes('업체 점검 장비 1곳') && txt.includes('가거도등표'), '');
+    ok('11-16 항구까지 도로 구간 표시', /광주지방기상청 → 목포항\s+도로 약/.test(txt.replace(/\n/g, ' ')), '');
+    ok('11-17 왕복 항해 시간 표시', txt.includes('왕복 항해 약 10시간'), '');
+    ok('11-18 육상 접근은 항해 표기 없음', txt.includes('차로 가서 걸어서 접근'), '');
+    ok('11-19 총계에 점검시간 제외 안내', txt.includes('점검 작업 시간과 대기 시간은 빠져 있습니다'), '');
+
+    const navs = await p.$$eval('.port-card .leg-nav', ns => ns.map(n => decodeURIComponent(n.getAttribute('href'))));
+    ok('11-20 항구 길안내는 항구 좌표로', navs[0].includes('126.378,34.785,목포항,,'), navs[0]);
+
+    // 지도 핀
+    const pins = await p.evaluate(() => [...document.querySelectorAll('.leaflet-marker-icon .pin')]
+      .map(n => [...n.classList].filter(c => c !== 'pin').join(' ')));
+    eq('11-21 출항 항구 핀', pins.filter(c => c === 'pin-port').length, 1);
+    ok('11-22 사무실 핀', pins.includes('pin-office'), pins.join(' '));
+
+    // 상세
+    await p.locator('.port-list .step-link').first().click(); await p.waitForTimeout(500);
+    const sheet = await p.$eval('#sheetBody', n => n.innerText);
+    ok('11-23 상세에 접근 방식·항구·파고', sheet.includes('선박 출항') && sheet.includes('목포항 · 편도 약 3시간')
+      && sheet.includes('1.5m 이하'), sheet.replace(/\n/g, ' ').slice(0, 160));
+    ok('11-24 항구까지 길안내 버튼', (await p.$eval('.sheet-btns a', n => n.textContent)).includes('목포항까지 길안내'));
+    ok('11-25 해양에는 파노라마 버튼 없음', !(await p.$('#sheetBody [data-act="pano"]')));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(250);
+
+    // 업체 점검 장비 상세
+    await p.evaluate(() => setListOpen(true)); await p.waitForTimeout(200);
+    await p.locator('#list li[data-id="22201"] button.item-main').click(); await p.waitForTimeout(400);
+    const vend = await p.$eval('#sheetBody', n => n.innerText);
+    ok('11-26 업체 정보 표시', vend.includes('해양장비유지보수(주)') && vend.includes('061-000-0000'), '');
+    await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+
+    // 지상으로 되돌아가기
+    await p.click('#tabs .tab[data-tab="land"]'); await p.waitForTimeout(400);
+    ok('11-27 지상 탭 복귀', (await p.$eval('#routeSec h2', n => n.textContent)) === '하루 출장 경로');
+    ok('11-28 지상에는 종류 필터 없음', !(await p.$('#kinds')));
+    await p.close();
+  }
+
+  /* ───────── 12. 해양 자료가 없을 때 ───────── */
+  {
+    const p = await newPage();
+    await p.goto(`${BASE}/index.html`); await ready(p);   // 저장소의 marine.csv는 머리글만 있습니다
+    await p.click('#tabs .tab[data-tab="marine"]'); await p.waitForTimeout(400);
+    const t = await p.$eval('#app', n => n.innerText);
+    ok('12-1 빈 자료 안내', t.includes('등록된 해양장비가 없습니다'), t.split('\n')[1] || '');
+    ok('12-2 채워야 할 칸 안내', t.includes('boat_min') && t.includes('wave_limit') && t.includes('access'), '');
+    ok('12-3 자바스크립트 오류 없이 지상 복귀', await (async () => {
+      await p.click('#tabs .tab[data-tab="land"]'); await p.waitForTimeout(400);
+      return (await p.$$eval('#list li.item', n => n.length)) >= 0;
+    })());
+    await p.close();
+  }
+
+  /* ───────── 13. 외부 의존성 ───────── */
+  {
+    const p = await newPage();
+    const external = [];
+    p.on('request', r => {
+      const u = new URL(r.url());
+      if (!['127.0.0.1', 'localhost'].includes(u.hostname)) external.push(u.origin);
+    });
+    await p.goto(`${BASE}/index.html`); await ready(p);
+    await p.click('#listToggle'); await p.waitForTimeout(300);
+    await p.locator('#list li button.pick').first().click(); await p.waitForTimeout(200);
+    await p.click('#calcBtn'); await p.waitForSelector('.route-total', { timeout: 20000 });
+    const hosts = [...new Set(external)].sort();
+    eq('13-1 첫 화면의 외부 요청은 지도 타일과 경로 서버뿐', hosts,
+      ['https://router.project-osrm.org', 'https://tile.openstreetmap.org']);
+    ok('13-2 지도 라이브러리는 저장소 안에서 로드',
+      (await p.evaluate(() => typeof L !== 'undefined')), '');
+    ok('13-3 CDN 요청 없음', !hosts.some(h => /unpkg|cdn|jsdelivr/.test(h)), hosts.join(' '));
+
+    // 외부를 전부 막아도 목록·경로가 동작하는지
+    const p2 = await newPage();
+    await p2.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, r => r.abort());
+    const errs2 = []; p2.on('pageerror', e => errs2.push(String(e)));
+    await p2.goto(`${BASE}/index.html`); await ready(p2);
+    ok('13-4 외부 차단해도 지도 라이브러리 동작', await p2.evaluate(() => typeof L !== 'undefined'));
+    await p2.click('#listToggle'); await p2.waitForTimeout(300);
+    ok('13-5 외부 차단해도 목록 표시', (await p2.$$eval('#list li.item', n => n.length)) > 0);
+    await p2.locator('#list li button.pick').first().click(); await p2.waitForTimeout(200);
+    await p2.click('#calcBtn'); await p2.waitForSelector('.route-total', { timeout: 20000 });
+    ok('13-6 외부 차단해도 경로 계산(직선 폴백)',
+      (await p2.$eval('#routeResult', n => n.innerText)).includes('직선거리'), '');
+    eq('13-7 자바스크립트 오류 없음', errs2, []);
+    await p2.close();
+    await p.close();
+  }
+
+  /* ───────── 14. 사진을 다른 서버에 둔 경우 ───────── */
+  {
+    const p = await newPage();
+    // 바깥 사진 요청은 실제로 나가지 않게 가로채 1x1 그림으로 응답합니다.
+    const asked = [];
+    await p.route('https://example.test/**', async r => {
+      asked.push(r.request().url());
+      await r.fulfill({ status: 200, contentType: 'image/gif',
+        body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64') });
+    });
+    await p.goto(`${BASE}/__fixture/index.html`); await ready(p);
+    await p.click('#listToggle'); await p.waitForTimeout(250);
+
+    await p.click('#list li[data-id="909"] button.item-main'); await p.waitForTimeout(300);
+    await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(900);
+    const bg1 = await p.$eval('#pano', n => getComputedStyle(n).backgroundImage);
+    ok('14-1 http 주소는 그대로 사용', bg1.includes('https://example.test/pano/909.jpg'), bg1);
+    ok('14-2 실제로 그 주소를 요청', asked.some(u => u.endsWith('/pano/909.jpg')), asked.join(' '));
+
+    await p.click('#list li[data-id="910"] button.item-main'); await p.waitForTimeout(300);
+    await p.click('#sheetBody [data-act="pano"]'); await p.waitForTimeout(900);
+    const wrap = await p.$eval('#panoWrap', n => n.innerHTML + n.innerText);
+    ok('14-3 파일명만 적으면 기본 경로에 이어 붙음',
+      wrap.includes('kma.go.kr/gwangju/panoramas/910.jpg'), wrap.slice(0, 200));
+    await p.close();
+  }
+
 } finally {
   await browser.close();
   server.close();

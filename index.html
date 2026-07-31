@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>광주·전남 AWS 기상관측망 관리</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<!-- 지도 라이브러리는 저장소 안에 두었습니다. 외부 접속이 막힌 곳에서도 지도가 뜹니다. -->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <style>
 /* ===== 기본 설정 ===== */
 :root{
@@ -56,6 +57,16 @@ header{
 .logo svg{width:26px;height:26px}
 header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-.5px}
 header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
+
+/* ===== 지상 / 해양 탭 ===== */
+.tabs{
+  display:flex;gap:8px;padding:14px 18px 0;max-width:540px;margin:0 auto;
+}
+.tab{
+  flex:1;padding:11px 8px;border:1.5px solid var(--line);border-radius:11px;
+  background:#fff;color:var(--muted);font-size:14.5px;font-weight:700;cursor:pointer;
+}
+.tab[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
 
 /* ===== 알림 배너 ===== */
 .banner{
@@ -145,6 +156,7 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 /* 지도에 올라가는 핀 — 글씨 없이 색으로만 구분합니다 */
 .pin-pick{background:var(--blue)}                 /* 출장지로 담은 장비 */
 .pin-office{background:var(--navy)}               /* 사무실 */
+.pin-port{background:#0f8a8a}                     /* 출항 항구 */
 .pin-sel{                                         /* 지금 선택한 장비 */
   background:var(--navy);width:34px;height:34px;
   box-shadow:0 0 0 4px rgba(21,101,192,.28), 0 3px 8px rgba(0,0,0,.4);
@@ -235,6 +247,34 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
   background:var(--unknown-bg);color:var(--unknown);font-size:12.5px;
 }
 
+/* ===== 해양장비 ===== */
+.empty-guide{
+  border:1px dashed var(--line);border-radius:var(--radius);background:var(--bg);
+  padding:20px 18px;font-size:13.5px;line-height:1.6;color:var(--muted);
+}
+.empty-guide b{display:block;color:var(--ink);font-size:15px;margin-bottom:8px}
+.empty-guide p{margin:0 0 12px}
+.col-help{margin:0;padding-left:18px}
+.col-help li{margin-bottom:3px}
+.col-help code{font-size:12px}
+.sea-box{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:15px}
+.sea-box .info{margin-bottom:12px}
+.port-card{
+  background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:13px 14px;margin-top:12px;
+}
+.port-head{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+.port-head b{font-size:15.5px}
+.port-cnt{font-size:12.5px;color:var(--muted)}
+.port-list{list-style:none;margin:10px 0 0;padding:0}
+.port-list li{padding:9px 0;border-top:1px solid var(--line)}
+.port-meta{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+.port-foot{
+  margin-top:10px;padding-top:9px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--muted);
+}
+.port-foot b{color:var(--ink)}
+
 /* ===== ⑤ 파노라마 ===== */
 .pano-pick{font-size:13.5px;color:var(--muted);margin:0 0 10px}
 .pano-pick b{color:var(--ink)}
@@ -322,6 +362,12 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
     </div>
   </header>
 
+  <!-- 지상 / 해양 전환 -->
+  <nav class="tabs" id="tabs" aria-label="장비 종류">
+    <button class="tab" data-tab="land" aria-pressed="true">지상 AWS</button>
+    <button class="tab" data-tab="marine" aria-pressed="false">해양장비</button>
+  </nav>
+
   <div class="banner" id="banner"></div>
 
   <div id="app" class="loading">불러오는 중…</div>
@@ -335,7 +381,7 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
       <div class="foot-row"><dt>데이터 기준</dt><dd id="dataBase">-</dd></div>
     </dl>
     <p class="foot-note">
-      본 화면의 장비 정보는 <code>data/stations.csv</code> 파일을 읽어 표시합니다.<br>
+      장비 정보는 <code>data/stations.csv</code>(지상)와 <code>data/marine.csv</code>(해양) 파일을 읽어 표시합니다.<br>
       경로 거리·시간은 도로 기준으로 계산하지만 <b>실시간 교통 상황은 반영되지 않습니다</b>.
     </p>
   </footer>
@@ -349,7 +395,7 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
   <div id="sheetBody"></div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script>
 /* =========================================================
    설정값 — 운영 전 이 부분만 실제 값으로 바꾸면 됩니다.
@@ -366,7 +412,21 @@ const CONFIG = {
   maxPick: 8,        // 한 번에 고를 수 있는 장비 수
   soonDays: 30,      // 예정일까지 이 일수 이내면 '곧 도래'
   csvPath: 'data/stations.csv',
-  panoDir: 'panoramas/',
+  marineCsvPath: 'data/marine.csv',   // 해양장비 (파일이 없으면 해양 탭에 안내만 뜹니다)
+  /* 사진을 어디서 가져올지. 폴더 이름이면 저장소 안에서, 주소면 그 서버에서 받아옵니다.
+     CSV에 파일명만 적으면 여기에 이어 붙고, 전체 주소를 적으면 그 주소를 그대로 씁니다. */
+  panoDir: 'https://www.kma.go.kr/gwangju/panoramas/',   // 관측노장 360° 파노라마
+  photoDir: 'photos/',                                   // 해양장비 사진
+
+  // 해상 기상 확인용 링크 — 출항 전 파고·풍속 확인
+  seaForecastUrl: 'https://www.weather.go.kr/w/ocean/marine/forecast.do',
+
+  /* 지도 배경 타일. 지도에서 유일하게 외부에서 받아오는 부분입니다.
+     사내망에서 외부가 막혀 있으면 기관 내부 타일 서버 주소로 바꾸세요.
+     타일을 못 받으면 지도만 비고 목록·경로·상세는 그대로 동작합니다. */
+  tileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  tileMaxZoom: 18,
+  tileAttribution: '&copy; OpenStreetMap',
 
   // 길안내 버튼이 열 지도앱 — 'naver' 또는 'kakao'
   navProvider: 'naver',
@@ -391,106 +451,106 @@ const CONFIG = {
    ※ CSV를 고쳤다면 이 아래 내용도 같은 값으로 맞춰 주세요.
    ========================================================= */
 const FALLBACK_CSV = `station_id,name,lat,lon,address,last_check,cycle_months,panorama,note
-43,솔라시도,34.71083,126.41163,전남광주통합특별시 해남군 산이면 구성리 655,,,,
-44,삼호,34.74476,126.4122,전남광주통합특별시 영암군 삼호읍 에프원로 2,,,,
-156,광주,35.17294,126.89156,광주광역시 북구 서암대로 71 광주지방기상청(운암동),,,156.svg,
-165,목포,34.81732,126.38151,전라남도 목포시 고하대로 815 (목포시 연산동 726-3 목포기상대),,,,
-168,여수,34.73929,127.74063,전라남도 여수시 고소동 304,,,,
-169,흑산도,34.68719,125.45105,전라남도 신안군 흑산면 예리 3길 21-90 흑산도관측소,,,,
-170,완도,34.39590,126.70182,전라남도 완도군 군외면 청해진로 795-3 (불목리 26),,,,
-174,순천,35.02040,127.36940,전라남도 순천시 승주읍 평중리 230번지 순천지역기상서비스센터,,,,
-175,진도(레),34.47211,126.32380,전라남도 진도군 의신면 운림산방로 527-209,,,,
-252,영광군,35.28366,126.47784,전라남도 영광군 복호로 7 영광군 현장방사능방재지휘센터,,,,
-258,보성군,34.76335,127.21226,전라남도 보성군 득량면 예당리 3046-2번지,,,,
-259,강진군,34.64464,126.78405,전라남도 강진군 강진읍 종합운동장길 58-8 종합운동장 내(군동면 호계리 733),,,,
-260,장흥,34.68886,126.91951,전라남도 장흥군 장흥읍 흥성로 226(장흥읍 축내리 271-11),,,,
-261,해남,34.55375,126.56907,전라남도 해남군 해남읍 남각길 337(해남읍 남천리 175-1 해남자동기상관측소),,,,
-262,고흥,34.61826,127.27572,전라남도 고흥군 고흥읍 행정리 483-1번지,,,,
-266,광양시,34.94340,127.69140,전라남도 광양시 중동 산109-3,,,,
-268,진도군,34.47296,126.25846,전라남도 진도군 진도읍 남동리 291,,,,
-269,안마도,35.34690,126.03050,전라남도 영광군 낙월면 월촌리 산257-5,,,,
-301,임자도,35.09511,126.11638,전라남도 신안군 임자면 진리 32,,,,
-302,장산도,34.64274,126.18264,전라남도 신안군 장산면 팽진리 산163,,,,
-303,가거도,34.07275,125.09741,전라남도 신안군 흑산면 가거도리 산95,,,,
-304,신지도,34.31801,126.84849,전라남도 완도군 신지면 월양리 855,,,,
-305,여서도,33.98622,126.92009,전라남도 완도군 청산면 여서도길 32(청산면 여서리 519 여서도내연발전소),,,,
-306,소리도,34.43185,127.80110,전라남도 여수시 남면 연도리 1619-19,,,,
-308,옥도,34.68703,126.07303,전라남도 신안군 하의면 옥도리 105-2,,,,
-315,성삼재,35.30673,127.51079,전라남도 구례군 산동면 노고단로 1068 성삼재휴게소,,,,
-316,무등산,35.11438,126.99743,광주광역시 동구 용연동 산 354-4 KBS광주방송총국 무등산송신소,,,,
-342,광산진곡,35.21978,126.79509,전남광주통합특별시 광산구 진곡동 3-25,,,,
-687,석곡,35.12620,127.25280,전라남도 곡성군 석곡면 유정리 403,,,,
-688,봉산,35.26878,126.93914,전라남도 담양군 봉산면 삼지리 437-9,,,,
-689,광주남구,35.10082,126.89853,광주광역시 남구 노대동 597 빛고을CC 주차장 입구,,,,
-697,서거차도,34.25058,125.91829,전라남도 진도군 조도면 서거차도1길 54(서거차도리 210),,,,
-698,해제,35.09385,126.28509,전라남도 무안군 해제면 광산리 242-4,,,,
-699,무안,34.98378,126.46108,전라남도 무안군 무안읍 교촌리 785-1,,,,
-706,담양,35.31021,126.97266,전라남도 담양군 담양읍 천변리 396-16 담양군농업기술센터 시험포,,,,
-707,지도,35.05796,126.20839,전라남도 신안군 지도읍 읍내리 산25-6 헬기장,,,,
-708,광산,35.12886,126.74524,광주광역시 광산구 용곡동 423-2 농업기술센터,,,,
-709,구례,35.20807,127.49363,전라남도 구례군 마산면 사도리 895-6,,,,
-710,나주,35.02504,126.74397,전라남도 나주시 금천면 오강리 386 나주배시험장,,,,
-711,이양,34.89711,126.98980,전라남도 화순군 이양면 오류리 314-2,,,,
-712,순천시,34.90351,127.51927,전라남도 순천시 해룡면 대안리 1155-16,,,,
-713,광양읍,34.97507,127.58259,전라남도 광양시 광양읍 칠성리 419-2,,,,
-714,자은도,34.87909,126.02868,전라남도 신안군 자은면 구영리 1164-24번지,,,,
-716,하의도,34.63066,126.03198,전라남도 신안군 하의면 후광길 288(후광리 87),,,,
-717,의신,34.42749,126.30976,전라남도 진도군 의신면 연주리 888-1,,,,
-718,상조도,34.33303,126.03646,전라남도 진도군 조도면 맹성리 633,,,,
-720,보길도,34.15486,126.54991,전라남도 완도군 보길면 부황리 산 60-5,,,,
-721,금일,34.33904,127.02825,전라남도 완도군 금일읍 신구리 산264-3,,,,
-722,조선대,35.13681,126.92875,광주광역시 동구 학동 668 조선대학교 태양광발전시범단지(간호대학교 뒷편),,,,
-723,거문도,34.02792,127.30898,전라남도 여수시 삼산면 거문리 87-72 해경거문치안센터,,,,
-730,장성,35.27940,126.76110,전라남도 장성군 황룡면 와룡리 399-2,,,,
-731,영암,34.81666,126.68634,전라남도 영암군 영암읍 배날리길 50(망호리 201-1),,,,
-732,보성,34.76192,127.09209,전라남도 보성군 보성읍 옥평리 571-11,,,,
-741,화순,35.05671,126.98515,전라남도 화순군 화순읍 삼천리 590,,,,
-742,운남,34.93889,126.33064,전라남도 무안군 운남면 성내리 580-7,,,,
-743,비금,34.77258,125.94688,전라남도 신안군 비금면 지당리 984-2 이세돌바둑기념관,,,,
-744,산이,34.67254,126.43646,전라남도 해남군 산이면 덕송리 1077 해남통신지원대대,,,,
-745,성전,34.68505,126.72554,전라남도 강진군 성전면 성전리 128,,,,
-746,땅끝,34.38184,126.51590,전라남도 해남군 송지면 미야리 854,,,,
-747,청산도,34.18292,126.85801,전라남도 완도군 청산면 도청리 976,,,,
-748,벌교,34.83694,127.36310,전라남도 보성군 장호길 56-386 벌교하수처리장,,,,
-749,도양,34.53471,127.12715,전라남도 고흥군 도양읍 봉암리 2346,,,,
-750,백야,34.62781,127.63569,전라남도 여수시 화양면 안포리 산823-3,,,,
-754,함평,35.06037,126.52732,전라남도 함평군 함평읍 기각리 189-7,,,,
-755,백아면,35.15959,127.08534,전라남도 화순군 백아면 옥리 487-1,,,,
-765,복내,34.89234,127.13448,전라남도 보성군 복내면 복내리 536-13 (축구장 주변),,,,
-766,여수산단,34.84946,127.71496,전라남도 여수시 여수산단로 918 GS칼텍스여천공장,,,,
-767,포두,34.58853,127.39745,전라남도 고흥군 포두면 송산리 1640,,,,
-768,곡성,35.28886,127.28531,전라남도 곡성군 곡성읍 삼인동길 97 31사단95연대3대대9중대(곡성군부대),,,,
-769,염산,35.19932,126.38336,전라남도 영광군 염산면 옥실리 3-20,,,,
-770,다도,34.92862,126.82001,전라남도 나주시 다도면 암정리 1105,,,,
-771,안좌,34.72693,126.14463,전라남도 신안군 안좌면 향목리 398-3,,,,
-772,수유,34.53208,126.23964,전라남도 진도군 진도읍 수유리 1421,,,,
-773,학산,34.70850,126.63593,전라남도 영암군 학산면 상월리 산 86(임),,,,
-774,전남도청,34.81747,126.46618,전라남도 무안군 삼향읍 남악리 1000(오룡길 1) 전남도청,,,,
-775,월야,35.17770,126.63538,전라남도 함평군 월야면 월야리 344-13,,,,
-776,현산,34.45996,126.55710,"전라남도 해남군 현산면 일평리 529-7, 529-6",,,,
-777,관산,34.55633,126.93462,전라남도 장흥군 관산읍 옥당리 226-2,,,,
-778,유치,34.79594,126.82180,전라남도 장흥군 유치면 관동리 62,,,,
-783,과기원,35.23027,126.84077,광주광역시 북구 오룡동 1 광주과학기술원 창업보육생산동 앞,,,,
-784,시종,34.87718,126.61258,전라남도 영암군 시종면 만수리 680,,,,
-785,북일,34.46383,126.67630,전라남도 해남군 북일면 신월리 174-4,,,,
-786,돌산,34.63808,127.77401,전라남도 여수시 돌산읍 서덕리 284-5,,,,
-787,도화,34.50672,127.31716,전라남도 고흥군 도화면 당오리 1147-15 도화베이스볼파크,,,,
-788,풍암,35.13159,126.88132,광주광역시 서구 풍암동 20 풍암생활체육공원 내,,,,
-789,압해도,34.87643,126.29290,전라남도 신안군 압해면 신용리 602-5 나무병원,,,,
-790,나로도,34.53258,127.46735,전라남도 고흥군 동일면 덕흥양쪽길 200,,,,
-791,피아골,35.26621,127.58376,전라남도 구례군 토지면 내동리 1155-1 서울대 남부학술림,,,,
-794,황전,35.10066,127.42739,전라남도 순천시 황전면 괴목리 60-1 황전면사무소,,,,
-795,옥과,35.27532,127.13899,전라남도 곡성군 옥과면 리문리 161,,,,
-796,초도,34.23775,127.24476,전라남도 여수시 삼산면 초도로 638,,,,
-797,하태도,34.39498,125.29953,전라남도 신안군 흑산면 태도리 산309-1 내연발전소 뒤,,,,
-798,홍도,34.68551,125.19236,전라남도 신안군 흑산면 홍도1길 53(홍도분교),,,,
-799,낙월도,35.20198,126.13494,전라남도 영광군 낙월면 낙월길 88(상낙월리 산 450-1),,,,
-856,광양백운산,35.10180,127.59815,전라남도 광양시 옥룡면 동곡리 1113 서울대 남부학술림,,,,
-857,완도읍,34.29995,126.71737,전라남도 완도군 완도읍 중도리 954-1,,,,
-858,지산,34.42956,126.17006,전라남도 진도군 지산면 인지리 77-1,,,,
-882,상무대,35.25179,126.60423,전라남도 장성군 삼서면 학성리 사서함 75,,,,
-964,마량,34.45902,126.81574,전라남도 강진군 마량면 마량리 1132-11,,,,
-973,화순능주,35.02330,126.94961,전라남도 화순군 능주면 만수리 794-4,,,,`;
+43,솔라시도,34.71083,126.41163,전남광주통합특별시 해남군 산이면 구성리 655,,,43.jpg,
+44,삼호,34.74476,126.4122,전남광주통합특별시 영암군 삼호읍 에프원로 2,,,44.jpg,
+156,광주,35.17294,126.89156,광주광역시 북구 서암대로 71 광주지방기상청(운암동),,,156.jpg,
+165,목포,34.81732,126.38151,전라남도 목포시 고하대로 815 (목포시 연산동 726-3 목포기상대),,,165.jpg,
+168,여수,34.73929,127.74063,전라남도 여수시 고소동 304,,,168.jpg,
+169,흑산도,34.68719,125.45105,전라남도 신안군 흑산면 예리 3길 21-90 흑산도관측소,,,169.jpg,
+170,완도,34.39590,126.70182,전라남도 완도군 군외면 청해진로 795-3 (불목리 26),,,170.jpg,
+174,순천,35.02040,127.36940,전라남도 순천시 승주읍 평중리 230번지 순천지역기상서비스센터,,,174.jpg,
+175,진도(레),34.47211,126.32380,전라남도 진도군 의신면 운림산방로 527-209,,,175.jpg,
+252,영광군,35.28366,126.47784,전라남도 영광군 복호로 7 영광군 현장방사능방재지휘센터,,,252.jpg,
+258,보성군,34.76335,127.21226,전라남도 보성군 득량면 예당리 3046-2번지,,,258.jpg,
+259,강진군,34.64464,126.78405,전라남도 강진군 강진읍 종합운동장길 58-8 종합운동장 내(군동면 호계리 733),,,259.jpg,
+260,장흥,34.68886,126.91951,전라남도 장흥군 장흥읍 흥성로 226(장흥읍 축내리 271-11),,,260.jpg,
+261,해남,34.55375,126.56907,전라남도 해남군 해남읍 남각길 337(해남읍 남천리 175-1 해남자동기상관측소),,,261.jpg,
+262,고흥,34.61826,127.27572,전라남도 고흥군 고흥읍 행정리 483-1번지,,,262.jpg,
+266,광양시,34.94340,127.69140,전라남도 광양시 중동 산109-3,,,266.jpg,
+268,진도군,34.47296,126.25846,전라남도 진도군 진도읍 남동리 291,,,268.jpg,
+269,안마도,35.34690,126.03050,전라남도 영광군 낙월면 월촌리 산257-5,,,269.jpg,
+301,임자도,35.09511,126.11638,전라남도 신안군 임자면 진리 32,,,301.jpg,
+302,장산도,34.64274,126.18264,전라남도 신안군 장산면 팽진리 산163,,,302.jpg,
+303,가거도,34.07275,125.09741,전라남도 신안군 흑산면 가거도리 산95,,,303.jpg,
+304,신지도,34.31801,126.84849,전라남도 완도군 신지면 월양리 855,,,304.jpg,
+305,여서도,33.98622,126.92009,전라남도 완도군 청산면 여서도길 32(청산면 여서리 519 여서도내연발전소),,,305.jpg,
+306,소리도,34.43185,127.80110,전라남도 여수시 남면 연도리 1619-19,,,306.jpg,
+308,옥도,34.68703,126.07303,전라남도 신안군 하의면 옥도리 105-2,,,308.jpg,
+315,성삼재,35.30673,127.51079,전라남도 구례군 산동면 노고단로 1068 성삼재휴게소,,,315.jpg,
+316,무등산,35.11438,126.99743,광주광역시 동구 용연동 산 354-4 KBS광주방송총국 무등산송신소,,,316.jpg,
+342,광산진곡,35.21978,126.79509,전남광주통합특별시 광산구 진곡동 3-25,,,342.jpg,
+687,석곡,35.12620,127.25280,전라남도 곡성군 석곡면 유정리 403,,,687.jpg,
+688,봉산,35.26878,126.93914,전라남도 담양군 봉산면 삼지리 437-9,,,688.jpg,
+689,광주남구,35.10082,126.89853,광주광역시 남구 노대동 597 빛고을CC 주차장 입구,,,689.jpg,
+697,서거차도,34.25058,125.91829,전라남도 진도군 조도면 서거차도1길 54(서거차도리 210),,,697.jpg,
+698,해제,35.09385,126.28509,전라남도 무안군 해제면 광산리 242-4,,,698.jpg,
+699,무안,34.98378,126.46108,전라남도 무안군 무안읍 교촌리 785-1,,,699.jpg,
+706,담양,35.31021,126.97266,전라남도 담양군 담양읍 천변리 396-16 담양군농업기술센터 시험포,,,706.jpg,
+707,지도,35.05796,126.20839,전라남도 신안군 지도읍 읍내리 산25-6 헬기장,,,707.jpg,
+708,광산,35.12886,126.74524,광주광역시 광산구 용곡동 423-2 농업기술센터,,,708.jpg,
+709,구례,35.20807,127.49363,전라남도 구례군 마산면 사도리 895-6,,,709.jpg,
+710,나주,35.02504,126.74397,전라남도 나주시 금천면 오강리 386 나주배시험장,,,710.jpg,
+711,이양,34.89711,126.98980,전라남도 화순군 이양면 오류리 314-2,,,711.jpg,
+712,순천시,34.90351,127.51927,전라남도 순천시 해룡면 대안리 1155-16,,,712.jpg,
+713,광양읍,34.97507,127.58259,전라남도 광양시 광양읍 칠성리 419-2,,,713.jpg,
+714,자은도,34.87909,126.02868,전라남도 신안군 자은면 구영리 1164-24번지,,,714.jpg,
+716,하의도,34.63066,126.03198,전라남도 신안군 하의면 후광길 288(후광리 87),,,716.jpg,
+717,의신,34.42749,126.30976,전라남도 진도군 의신면 연주리 888-1,,,717.jpg,
+718,상조도,34.33303,126.03646,전라남도 진도군 조도면 맹성리 633,,,718.jpg,
+720,보길도,34.15486,126.54991,전라남도 완도군 보길면 부황리 산 60-5,,,720.jpg,
+721,금일,34.33904,127.02825,전라남도 완도군 금일읍 신구리 산264-3,,,721.jpg,
+722,조선대,35.13681,126.92875,광주광역시 동구 학동 668 조선대학교 태양광발전시범단지(간호대학교 뒷편),,,722.jpg,
+723,거문도,34.02792,127.30898,전라남도 여수시 삼산면 거문리 87-72 해경거문치안센터,,,723.jpg,
+730,장성,35.27940,126.76110,전라남도 장성군 황룡면 와룡리 399-2,,,730.jpg,
+731,영암,34.81666,126.68634,전라남도 영암군 영암읍 배날리길 50(망호리 201-1),,,731.jpg,
+732,보성,34.76192,127.09209,전라남도 보성군 보성읍 옥평리 571-11,,,732.jpg,
+741,화순,35.05671,126.98515,전라남도 화순군 화순읍 삼천리 590,,,741.jpg,
+742,운남,34.93889,126.33064,전라남도 무안군 운남면 성내리 580-7,,,742.jpg,
+743,비금,34.77258,125.94688,전라남도 신안군 비금면 지당리 984-2 이세돌바둑기념관,,,743.jpg,
+744,산이,34.67254,126.43646,전라남도 해남군 산이면 덕송리 1077 해남통신지원대대,,,744.jpg,
+745,성전,34.68505,126.72554,전라남도 강진군 성전면 성전리 128,,,745.jpg,
+746,땅끝,34.38184,126.51590,전라남도 해남군 송지면 미야리 854,,,746.jpg,
+747,청산도,34.18292,126.85801,전라남도 완도군 청산면 도청리 976,,,747.jpg,
+748,벌교,34.83694,127.36310,전라남도 보성군 장호길 56-386 벌교하수처리장,,,748.jpg,
+749,도양,34.53471,127.12715,전라남도 고흥군 도양읍 봉암리 2346,,,749.jpg,
+750,백야,34.62781,127.63569,전라남도 여수시 화양면 안포리 산823-3,,,750.jpg,
+754,함평,35.06037,126.52732,전라남도 함평군 함평읍 기각리 189-7,,,754.jpg,
+755,백아면,35.15959,127.08534,전라남도 화순군 백아면 옥리 487-1,,,755.jpg,
+765,복내,34.89234,127.13448,전라남도 보성군 복내면 복내리 536-13 (축구장 주변),,,765.jpg,
+766,여수산단,34.84946,127.71496,전라남도 여수시 여수산단로 918 GS칼텍스여천공장,,,766.jpg,
+767,포두,34.58853,127.39745,전라남도 고흥군 포두면 송산리 1640,,,767.jpg,
+768,곡성,35.28886,127.28531,전라남도 곡성군 곡성읍 삼인동길 97 31사단95연대3대대9중대(곡성군부대),,,768.jpg,
+769,염산,35.19932,126.38336,전라남도 영광군 염산면 옥실리 3-20,,,769.jpg,
+770,다도,34.92862,126.82001,전라남도 나주시 다도면 암정리 1105,,,770.jpg,
+771,안좌,34.72693,126.14463,전라남도 신안군 안좌면 향목리 398-3,,,771.jpg,
+772,수유,34.53208,126.23964,전라남도 진도군 진도읍 수유리 1421,,,772.jpg,
+773,학산,34.70850,126.63593,전라남도 영암군 학산면 상월리 산 86(임),,,773.jpg,
+774,전남도청,34.81747,126.46618,전라남도 무안군 삼향읍 남악리 1000(오룡길 1) 전남도청,,,774.jpg,
+775,월야,35.17770,126.63538,전라남도 함평군 월야면 월야리 344-13,,,775.jpg,
+776,현산,34.45996,126.55710,"전라남도 해남군 현산면 일평리 529-7, 529-6",,,776.jpg,
+777,관산,34.55633,126.93462,전라남도 장흥군 관산읍 옥당리 226-2,,,777.jpg,
+778,유치,34.79594,126.82180,전라남도 장흥군 유치면 관동리 62,,,778.jpg,
+783,과기원,35.23027,126.84077,광주광역시 북구 오룡동 1 광주과학기술원 창업보육생산동 앞,,,783.jpg,
+784,시종,34.87718,126.61258,전라남도 영암군 시종면 만수리 680,,,784.jpg,
+785,북일,34.46383,126.67630,전라남도 해남군 북일면 신월리 174-4,,,785.jpg,
+786,돌산,34.63808,127.77401,전라남도 여수시 돌산읍 서덕리 284-5,,,786.jpg,
+787,도화,34.50672,127.31716,전라남도 고흥군 도화면 당오리 1147-15 도화베이스볼파크,,,787.jpg,
+788,풍암,35.13159,126.88132,광주광역시 서구 풍암동 20 풍암생활체육공원 내,,,788.jpg,
+789,압해도,34.87643,126.29290,전라남도 신안군 압해면 신용리 602-5 나무병원,,,789.jpg,
+790,나로도,34.53258,127.46735,전라남도 고흥군 동일면 덕흥양쪽길 200,,,790.jpg,
+791,피아골,35.26621,127.58376,전라남도 구례군 토지면 내동리 1155-1 서울대 남부학술림,,,791.jpg,
+794,황전,35.10066,127.42739,전라남도 순천시 황전면 괴목리 60-1 황전면사무소,,,794.jpg,
+795,옥과,35.27532,127.13899,전라남도 곡성군 옥과면 리문리 161,,,795.jpg,
+796,초도,34.23775,127.24476,전라남도 여수시 삼산면 초도로 638,,,796.jpg,
+797,하태도,34.39498,125.29953,전라남도 신안군 흑산면 태도리 산309-1 내연발전소 뒤,,,797.jpg,
+798,홍도,34.68551,125.19236,전라남도 신안군 흑산면 홍도1길 53(홍도분교),,,798.jpg,
+799,낙월도,35.20198,126.13494,전라남도 영광군 낙월면 낙월길 88(상낙월리 산 450-1),,,799.jpg,
+856,광양백운산,35.10180,127.59815,전라남도 광양시 옥룡면 동곡리 1113 서울대 남부학술림,,,856.jpg,
+857,완도읍,34.29995,126.71737,전라남도 완도군 완도읍 중도리 954-1,,,857.jpg,
+858,지산,34.42956,126.17006,전라남도 진도군 지산면 인지리 77-1,,,858.jpg,
+882,상무대,35.25179,126.60423,전라남도 장성군 삼서면 학성리 사서함 75,,,882.jpg,
+964,마량,34.45902,126.81574,전라남도 강진군 마량면 마량리 1132-11,,,964.jpg,
+973,화순능주,35.02330,126.94961,전라남도 화순군 능주면 만수리 794-4,,,973.jpg,`;
 
 /* ========================= 아이콘 ========================= */
 const ICON = {
@@ -601,20 +661,84 @@ function buildStation(raw){
   return s;
 }
 
+/* 해양장비 한 줄을 화면에서 쓸 형태로 만듭니다.
+   점검일·주기로 상태를 매기는 부분은 지상 장비와 같습니다. */
+function buildMarine(raw){
+  const s=buildStation(raw);
+  const portLat=parseFloat(raw.port_lat), portLon=parseFloat(raw.port_lon);
+  const boat=parseInt(raw.boat_min,10);
+  const wave=parseFloat(raw.wave_limit);
+  s.kind   = KIND[KIND_ALIAS[(raw.kind||'').trim()]] || KIND.etc;
+  s.access = ACCESS[ACCESS_ALIAS[(raw.access||'').trim()]] || ACCESS.boat;
+  s.seaArea= raw.sea_area||'';
+  s.port   = raw.port||'';
+  s.portPt = Number.isFinite(portLat)&&Number.isFinite(portLon)
+             ? { name:s.port||'출항 항구', lat:portLat, lon:portLon, address:raw.port_address||'' } : null;
+  s.boatMin= Number.isFinite(boat)&&boat>0 ? boat : null;
+  s.wave   = Number.isFinite(wave)&&wave>0 ? wave : null;
+  s.vendor = raw.vendor||'';
+  s.vendorTel = raw.vendor_tel||'';
+  s.photo  = raw.photo||'';
+  /* 출항 계획에서 묶는 기준 —
+     선박은 같은 항구끼리 한 번에 나가므로 항구로 묶고,
+     육상 접근은 각자 다른 곳으로 차를 몰고 가므로 장비별로 따로 둡니다. */
+  s.group      = s.access.key==='boat' ? `port:${s.port||'미지정'}` : `land:${s.id}`;
+  s.groupLabel = s.access.key==='boat' ? (s.port||'출항 항구 미지정') : s.name;
+  return s;
+}
+
 /* ========================= 상태 저장소 ========================= */
-const state = { stations:[], filter:'all', query:'', mode:'all', listOpen:false,
+const state = { tab:'land',
+                stations:[], marine:[], marineLoaded:false,
+                filter:'all', kind:'all', query:'', mode:'all', listOpen:false,
                 picked:[], selected:null,
-                map:null, markerLayer:null, markers:{}, bounds:null, pano:null };
+                map:null, mapCleanup:null, markerLayer:null, markers:{}, bounds:null, pano:null };
+
+// 지금 탭에서 다루는 장비 목록
+function items(){ return state.tab==='marine' ? state.marine : state.stations; }
+
+/* 해양장비 종류·접근 방식 */
+const KIND = {
+  buoy:    { key:'buoy',    label:'해양기상부이' },
+  light:   { key:'light',   label:'등표관측장비' },
+  wave:    { key:'wave',    label:'파고부이·파랑계' },
+  coast:   { key:'coast',   label:'연안·항만' },
+  etc:     { key:'etc',     label:'기타' }
+};
+const KIND_ALIAS = {
+  '부이':'buoy','해양기상부이':'buoy','buoy':'buoy',
+  '등표':'light','등표기상관측장비':'light','등대':'light','light':'light',
+  '파고':'wave','파고부이':'wave','파랑계':'wave','wave':'wave',
+  '연안':'coast','항만':'coast','연안방재':'coast','coast':'coast'
+};
+const ACCESS = {
+  boat:   { key:'boat',   label:'선박 출항',   desc:'배를 타고 나가야 합니다' },
+  land:   { key:'land',   label:'육상 접근',   desc:'차로 가서 걸어서 접근합니다' },
+  vendor: { key:'vendor', label:'업체 점검',   desc:'유지보수 업체가 수행합니다' }
+};
+const ACCESS_ALIAS = {
+  '선박':'boat','배':'boat','출항':'boat','boat':'boat',
+  '육상':'land','도보':'land','차량':'land','land':'land',
+  '업체':'vendor','용역':'vendor','외주':'vendor','vendor':'vendor'
+};
 
 // 검색 방식별 안내 문구
 const MODE_PLACEHOLDER = {
-  all:  '지점명 · 주소 · 번호 검색',
-  addr: '주소로 검색 (예: 목포시)',
-  id:   '관측장비번호로 검색 (예: 165)'
+  land: {
+    all:  '지점명 · 주소 · 번호 검색',
+    addr: '주소로 검색 (예: 목포시)',
+    id:   '관측장비번호로 검색 (예: 165)'
+  },
+  marine: {
+    all:  '지점명 · 해역 · 항구 · 번호 검색',
+    addr: '해역이나 출항 항구로 검색 (예: 목포항)',
+    id:   '관측장비번호로 검색'
+  }
 };
 
 /* ========================= 화면 그리기 ========================= */
 function render(){
+  if(state.tab==='marine') return renderMarine();
   document.getElementById('app').className='';
   document.getElementById('app').innerHTML = `
   <!-- ③ 지도 + 목록 -->
@@ -679,18 +803,131 @@ function render(){
   renderPano(null);
 }
 
+/* ========================= 해양장비 화면 ========================= */
+function renderMarine(){
+  const app=document.getElementById('app');
+  app.className='';
+
+  if(!state.marine.length){
+    app.innerHTML=`<section><h2>해양장비 점검</h2>
+      <div class="empty-guide">
+        <b>${state.marineLoaded?'등록된 해양장비가 없습니다.':'해양장비 자료를 읽지 못했습니다.'}</b>
+        <p><code>data/marine.csv</code>를 만들고 아래 칸을 채우면 이 화면에 나타납니다.
+           엑셀로 열어 수정한 뒤 <b>UTF-8 CSV</b>로 저장하세요.</p>
+        <ul class="col-help">
+          <li><code>station_id</code> 관측장비번호 · <code>name</code> 지점명</li>
+          <li><code>kind</code> 부이 / 등표 / 파고 / 연안</li>
+          <li><code>lat</code>, <code>lon</code> 장비 좌표 · <code>sea_area</code> 해역</li>
+          <li><code>access</code> 선박 / 육상 / 업체</li>
+          <li><code>port</code>, <code>port_lat</code>, <code>port_lon</code> 출항 항구와 좌표</li>
+          <li><code>boat_min</code> 항구에서 편도 항해 시간(분)</li>
+          <li><code>wave_limit</code> 점검 가능 파고(m)</li>
+          <li><code>vendor</code>, <code>vendor_tel</code> 유지보수 업체·연락처</li>
+          <li><code>last_check</code>, <code>cycle_months</code> 점검일·주기</li>
+          <li><code>photo</code> 사진 파일명 · <code>note</code> 비고</li>
+        </ul>
+      </div></section>`;
+    return;
+  }
+
+  app.innerHTML = `
+  <section>
+    <h2>지도 · 해양장비 목록</h2>
+    <p class="sec-desc">목록에서 장비를 누르면 지도에 위치가 표시됩니다.
+      <b>＋ 담기</b>로 고른 점검 대상도 함께 핀으로 보입니다.</p>
+    <div id="map"></div>
+    <div class="map-fail" id="mapFail">지도를 불러오지 못했습니다. 아래 목록은 정상적으로 이용할 수 있습니다.</div>
+    <div class="tools">
+      <input class="search" id="q" type="search" placeholder="지점명 · 해역 · 항구 · 번호 검색" autocomplete="off">
+      <button class="fitBtn" id="fitBtn" type="button">전체 보기</button>
+    </div>
+    <div class="chips" id="modes">
+      <button class="chip" data-m="all" aria-pressed="true">전체 검색</button>
+      <button class="chip" data-m="addr" aria-pressed="false">해역 · 항구</button>
+      <button class="chip" data-m="id" aria-pressed="false">관측장비번호</button>
+    </div>
+
+    <button class="list-toggle" id="listToggle" type="button" aria-expanded="false" aria-controls="listBox">
+      해양장비 목록 <span class="cnt" id="listCount"></span> <span class="caret">▼</span>
+    </button>
+    <div id="listBox" hidden>
+      <div class="chips" id="kinds">
+        <button class="chip" data-k="all" aria-pressed="true">전체 종류</button>
+        ${Object.values(KIND).filter(k=>state.marine.some(s=>s.kind.key===k.key))
+          .map(k=>`<button class="chip" data-k="${k.key}" aria-pressed="false">${k.label}</button>`).join('')}
+      </div>
+      <div class="chips" id="chips">
+        <button class="chip" data-f="all" aria-pressed="true">전체 상태</button>
+        <button class="chip" data-f="due" aria-pressed="false">점검필요</button>
+        <button class="chip" data-f="soon" aria-pressed="false">곧 도래</button>
+        <button class="chip" data-f="ok" aria-pressed="false">정상</button>
+      </div>
+      <ul class="list" id="list"></ul>
+    </div>
+  </section>
+
+  <section id="routeSec">
+    <h2>출항 계획</h2>
+    <p class="sec-desc">담은 장비를 <b>출항 항구별로 묶어</b> 하루 일정을 잡습니다.
+      배는 하루에 한 번 띄우는 것을 기준으로 했습니다.</p>
+    <div class="route-box">
+      <p class="route-from">육상 출발 &nbsp;<b>${esc(CONFIG.office.name)}</b></p>
+      <div class="picked-tags" id="tags"></div>
+      <button class="btn" id="calcBtn" disabled>장비를 담아주세요</button>
+      <p class="route-note">최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다.
+        사무실에서 <b>항구까지는 도로 기준</b>, <b>항구에서 장비까지는 CSV의 항해 시간</b>으로 계산합니다.
+        업체가 점검하는 장비는 일정에서 빼고 따로 표시합니다.</p>
+      <div class="route-result" id="routeResult"></div>
+    </div>
+  </section>
+
+  <section id="seaSec">
+    <h2>출항 전 확인</h2>
+    <p class="sec-desc">해양장비 점검은 파고·풍속 조건이 맞아야 나갈 수 있습니다.</p>
+    <div class="sea-box">
+      <ul class="info">
+        <li><b>담은 장비 중 가장 낮은 파고 조건</b><span id="waveWorst">-</span></li>
+      </ul>
+      <a class="btn btn-ghost" href="${CONFIG.seaForecastUrl}" target="_blank" rel="noopener">해상 예보 확인</a>
+      <p class="route-note">파고 조건은 CSV의 <code>wave_limit</code> 값입니다.
+        실제 출항 여부는 예보와 선박 운항 상황을 함께 확인하고 판단하세요.</p>
+    </div>
+  </section>`;
+
+  bindEvents();
+  initMap();
+  renderList();
+  updateWaveWorst();
+}
+
+/* 담은 장비 중 가장 까다로운 파고 조건.
+   업체가 점검하는 장비는 우리가 배를 띄우지 않으므로 셈에서 뺍니다. */
+function updateWaveWorst(){
+  const el=document.getElementById('waveWorst'); if(!el) return;
+  const sail=state.picked.map(id=>state.marine.find(s=>s.id===id))
+    .filter(s=>s && s.access.key==='boat');
+  const waves=sail.map(s=>s.wave).filter(w=>w!=null);
+  el.textContent = !sail.length ? '선박으로 나가는 장비 없음'
+    : waves.length ? `${Math.min(...waves)}m 이하`
+    : '자료 없음';
+}
+
 function badge(s){
   return `<span class="badge ${s.status.cls}">${ICON[s.status.key]}${s.status.label}</span>`;
 }
 
 function visible(){
   const q=state.query.trim().toLowerCase();
-  return state.stations.filter(s=>{
+  const marine=state.tab==='marine';
+  return items().filter(s=>{
     if(state.filter!=='all' && s.status.key!==state.filter) return false;
+    if(marine && state.kind!=='all' && s.kind.key!==state.kind) return false;
     if(!q) return true;
-    const hay = state.mode==='addr' ? s.address
+    // 해양은 '주소 검색' 자리를 해역·항구 검색으로 씁니다.
+    const where = marine ? `${s.seaArea} ${s.port} ${s.address}` : s.address;
+    const hay = state.mode==='addr' ? where
               : state.mode==='id'   ? s.id
-              : (s.name+' '+s.address+' '+s.id);
+              : (s.name+' '+where+' '+s.id);
     return String(hay).toLowerCase().includes(q);
   });
 }
@@ -712,10 +949,16 @@ function renderList(){
     const nextTxt = s.next
       ? `다음 점검 <b>${fmtDate(s.next)}</b>` + (s.days<0 ? ` · <b style="color:var(--due)">${-s.days}일 경과</b>` : ` · ${s.days}일 남음`)
       : `<b style="color:var(--unknown)">점검 정보 확인 필요</b>`;
+    // 해양은 주소 대신 종류·해역·접근 방식을 보여줍니다.
+    const sub = state.tab==='marine'
+      ? `${esc(s.kind.label)} · ${esc(s.access.label)}`
+        + (s.seaArea?` · ${esc(s.seaArea)}`:'')
+        + (s.port?` · 출항 ${esc(s.port)}`:'')
+      : esc(s.address)||'주소 없음';
     return `<li class="item ${on?'picked':''}" data-id="${esc(s.id)}">
       <button class="item-main" data-act="open" data-id="${esc(s.id)}">
         <span class="item-top"><span class="item-name">${esc(s.name)}</span><span class="item-id">${esc(s.id)}</span>${badge(s)}</span>
-        <span class="item-addr">${esc(s.address)||'주소 없음'}</span>
+        <span class="item-addr">${sub}</span>
         <span class="item-next">${nextTxt}</span>
       </button>
       <button class="pick" data-act="pick" data-id="${esc(s.id)}" aria-pressed="${on}"
@@ -734,10 +977,14 @@ function initMap(){
     document.getElementById('mapFail').style.display='block';
     return;
   }
-  const pts=state.stations.filter(s=>s.valid);
-  state.map=L.map(el,{scrollWheelZoom:false}).setView([36.4,127.9],6.4);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    maxZoom:18, attribution:'&copy; OpenStreetMap'
+  // 탭을 바꾸면 이 함수가 다시 불립니다. 앞서 만든 지도를 확실히 정리해 둡니다.
+  if(state.mapCleanup){ state.mapCleanup(); state.mapCleanup=null; }
+
+  const pts=items().filter(s=>s.valid);
+  const map=L.map(el,{scrollWheelZoom:false}).setView([36.4,127.9],6.4);
+  state.map=map;
+  L.tileLayer(CONFIG.tileUrl,{
+    maxZoom:CONFIG.tileMaxZoom, attribution:CONFIG.tileAttribution
   }).addTo(state.map);
 
   // 핀은 처음에 하나도 두지 않습니다. 선택한 장비와 출장지만 syncMarkers가 올립니다.
@@ -747,16 +994,24 @@ function initMap(){
   // 컨테이너 크기가 확정된 뒤 '한 번만' 범위를 맞춥니다.
   // (fitBounds를 여러 번 겹쳐 부르면 타일 격자가 어긋나 지도 일부가 비어 보입니다)
   state.bounds = pts.length ? L.latLngBounds(pts.map(s=>[s.lat,s.lon])).pad(0.12) : null;
-  setTimeout(()=>{
-    state.map.invalidateSize({animate:false});
-    if(state.bounds) state.map.fitBounds(state.bounds,{animate:false});
+  const fitT=setTimeout(()=>{
+    map.invalidateSize({animate:false});
+    if(state.bounds) map.fitBounds(state.bounds,{animate:false});
   },80);
 
   // 화면 회전·크기 변경 대응 (연속 호출은 묶어서 한 번만)
   let rzT=null;
-  const onResize=()=>{ clearTimeout(rzT); rzT=setTimeout(()=>state.map.invalidateSize({animate:false}),150); };
-  if(window.ResizeObserver) new ResizeObserver(onResize).observe(el);
+  const onResize=()=>{ clearTimeout(rzT); rzT=setTimeout(()=>map.invalidateSize({animate:false}),150); };
+  const ro = window.ResizeObserver ? new ResizeObserver(onResize) : null;
+  if(ro) ro.observe(el);
   window.addEventListener('orientationchange',onResize);
+
+  state.mapCleanup=()=>{
+    clearTimeout(fitT); clearTimeout(rzT);
+    if(ro) ro.disconnect();
+    window.removeEventListener('orientationchange',onResize);
+    map.remove();
+  };
 }
 
 /* 지도 핀을 다시 그립니다 — 선택한 장비 + 출장지로 담은 장비(+사무실)만 올립니다.
@@ -779,47 +1034,83 @@ function syncMarkers(){
   // 출장지를 담았을 때만 사무실(출발·도착지)을 함께 보여줍니다.
   if(state.picked.length) put(CONFIG.office.lat, CONFIG.office.lon, 'pin-office', CONFIG.office.name, null, 28);
 
-  for(const id of state.picked){
-    if(id===state.selected) continue;                 // 선택 핀으로 대신 표시
-    const s=state.stations.find(x=>x.id===id);
-    if(s && s.valid) state.markers[id]=put(s.lat,s.lon,'pin-pick',`${s.name} · 출장지`,()=>openSheet(s.id),28);
+  // 해양 탭에서는 담은 장비의 출항 항구도 함께 보여줍니다.
+  if(state.tab==='marine'){
+    const seen=new Set();
+    for(const id of state.picked){
+      const s=state.marine.find(x=>x.id===id);
+      if(!s || !s.portPt || seen.has(s.port)) continue;
+      seen.add(s.port);
+      put(s.portPt.lat, s.portPt.lon, 'pin-port', `${s.port} · 출항 항구`, null, 26);
+    }
   }
 
-  const sel=state.stations.find(x=>x.id===state.selected);
+  const pickLabel = state.tab==='marine' ? '점검 대상' : '출장지';
+  for(const id of state.picked){
+    if(id===state.selected) continue;                 // 선택 핀으로 대신 표시
+    const s=items().find(x=>x.id===id);
+    if(s && s.valid) state.markers[id]=put(s.lat,s.lon,'pin-pick',`${s.name} · ${pickLabel}`,()=>openSheet(s.id),28);
+  }
+
+  const sel=items().find(x=>x.id===state.selected);
   if(sel && sel.valid){
     const picked=state.picked.includes(sel.id);
     state.markers[sel.id]=put(sel.lat,sel.lon,'pin-sel',
-      picked?`${sel.name} · 출장지`:sel.name, ()=>openSheet(sel.id), 34);
+      picked?`${sel.name} · ${pickLabel}`:sel.name, ()=>openSheet(sel.id), 34);
   }
 }
 
 /* ========================= 바텀시트 ========================= */
 function openSheet(id){
-  const s=state.stations.find(x=>x.id===id); if(!s) return;
+  const s=items().find(x=>x.id===id); if(!s) return;
+  const marine=state.tab==='marine';
   // 선택한 장비를 지도에 핀으로 띄우고 그 위치로 옮깁니다.
   state.selected=id;
   syncMarkers();
   if(state.map && s.valid) state.map.setView([s.lat,s.lon], Math.max(state.map.getZoom(), 11), {animate:true});
-  const navUrl = s.valid ? navToLink(s) : null;
-  document.getElementById('sheetBody').innerHTML = `
-    <div class="sheet-head">
-      <h3 id="sheetName">${esc(s.name)}</h3>
-      ${badge(s)}
-    </div>
-    <p class="sheet-addr">${esc(s.address)||'주소 정보 없음'}</p>
-    <ul class="info">
+
+  const common = `
       <li><b>지점번호</b><span>${esc(s.id)||'-'}</span></li>
       <li><b>마지막 점검</b><span>${fmtDate(s.last)}</span></li>
       <li><b>점검 주기</b><span>${s.cycle?s.cycle+'개월':'-'}</span></li>
       <li><b>다음 점검</b><span class="${s.status.key==='due'?'warn':''}">${fmtDate(s.next)}${
         s.days!==null ? (s.days<0?` (${-s.days}일 경과)`:` (${s.days}일 남음)`) : ''}</span></li>
-      <li><b>좌표</b><span>${s.valid?`${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`:'확인 필요'}</span></li>
-      ${s.note?`<li><b>비고</b><span>${esc(s.note)}</span></li>`:''}
-    </ul>
-    <div class="sheet-btns">
+      <li><b>좌표</b><span>${s.valid?`${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`:'확인 필요'}</span></li>`;
+
+  let info, subtitle, buttons;
+  if(marine){
+    subtitle = [s.kind.label, s.seaArea].filter(Boolean).join(' · ') || '해양장비';
+    info = `
+      <li><b>접근 방식</b><span>${esc(s.access.label)}</span></li>
+      ${s.port?`<li><b>출항 항구</b><span>${esc(s.port)}${s.boatMin?` · 편도 약 ${fmtMin(s.boatMin)}`:''}</span></li>`:''}
+      ${s.wave?`<li><b>점검 가능 파고</b><span>${s.wave}m 이하</span></li>`:''}
+      ${common}
+      ${s.vendor?`<li><b>유지보수 업체</b><span>${esc(s.vendor)}${s.vendorTel?` · ${esc(s.vendorTel)}`:''}</span></li>`:''}
+      ${s.note?`<li><b>비고</b><span>${esc(s.note)}</span></li>`:''}`;
+    // 육상 접근이면 장비까지, 배로 가면 출항 항구까지 길을 안내합니다.
+    const target = s.access.key==='land' ? (s.valid?s:null) : s.portPt;
+    buttons = `
+      ${target?`<a class="btn" href="${navToLink(target)}" target="_blank" rel="noopener">${ICON.nav}
+        ${s.access.key==='land'?'길안내 (현위치 출발)':`${esc(s.port||'항구')}까지 길안내`}</a>`:''}
+      ${s.photo?`<a class="btn btn-ghost" href="${mediaUrl(CONFIG.photoDir,s.photo)}"
+        target="_blank" rel="noopener">${ICON.vr} 장비 사진</a>`:''}`;
+  }else{
+    subtitle = esc(s.address)||'주소 정보 없음';
+    info = `${common}${s.note?`<li><b>비고</b><span>${esc(s.note)}</span></li>`:''}`;
+    const navUrl = s.valid ? navToLink(s) : null;
+    buttons = `
       ${navUrl?`<a class="btn" href="${navUrl}" target="_blank" rel="noopener">${ICON.nav} 길안내 (현위치 출발)</a>`:''}
-      <button class="btn btn-ghost" data-act="pano" data-id="${esc(s.id)}">${ICON.vr} 현장 둘러보기</button>
-    </div>`;
+      <button class="btn btn-ghost" data-act="pano" data-id="${esc(s.id)}">${ICON.vr} 현장 둘러보기</button>`;
+  }
+
+  document.getElementById('sheetBody').innerHTML = `
+    <div class="sheet-head">
+      <h3 id="sheetName">${esc(s.name)}</h3>
+      ${badge(s)}
+    </div>
+    <p class="sheet-addr">${subtitle}</p>
+    <ul class="info">${info}</ul>
+    <div class="sheet-btns">${buttons}</div>`;
   document.getElementById('sheet').classList.add('show');
   document.getElementById('dim').classList.add('show');
 }
@@ -833,17 +1124,19 @@ function renderTags(){
   const box=document.getElementById('tags');
   const btn=document.getElementById('calcBtn');
   box.innerHTML = state.picked.map(id=>{
-    const s=state.stations.find(x=>x.id===id);
+    const s=items().find(x=>x.id===id);
     return `<span class="tag">${esc(s.name)}<button data-act="unpick" data-id="${esc(id)}" aria-label="${esc(s.name)} 빼기">✕</button></span>`;
   }).join('');
   btn.disabled = state.picked.length===0;
   btn.textContent = state.picked.length===0
     ? '장비를 담아주세요'
-    : `${state.picked.length}곳 방문 순서 계산하기`;
+    : state.tab==='marine'
+      ? `${state.picked.length}곳 출항 계획 짜기`
+      : `${state.picked.length}곳 방문 순서 계산하기`;
 }
 
 function togglePick(id){
-  const s=state.stations.find(x=>x.id===id);
+  const s=items().find(x=>x.id===id);
   if(!s||!s.valid) return;
   const i=state.picked.indexOf(id);
   if(i>=0) state.picked.splice(i,1);
@@ -854,7 +1147,7 @@ function togglePick(id){
     }
     state.picked.push(id);
   }
-  renderTags(); renderList(); syncMarkers();
+  renderTags(); renderList(); syncMarkers(); updateWaveWorst();
   document.getElementById('routeResult').classList.remove('show');
 }
 
@@ -981,7 +1274,95 @@ function legRow(m,pts,leg){
   </div>`;
 }
 
+/* 해양 — 출항 항구별로 묶어 하루 일정을 만듭니다.
+   사무실→항구는 도로 기준, 항구→장비는 CSV의 항해 시간을 씁니다. */
+async function calcSailing(){
+  const list=state.picked.map(id=>state.marine.find(x=>x.id===id)).filter(Boolean);
+  if(!list.length) return;
+  const box=document.getElementById('routeResult');
+  const btn=document.getElementById('calcBtn');
+  box.innerHTML=`<div class="route-loading">항구까지 도로 경로를 계산하는 중입니다…</div>`;
+  box.classList.add('show');
+  btn.disabled=true;
+
+  // 업체 점검 장비는 일정에서 빼고 따로 알립니다.
+  const byVendor=list.filter(s=>s.access.key==='vendor');
+  const mine=list.filter(s=>s.access.key!=='vendor');
+
+  // 출항 항구(또는 '육상 접근')별로 묶습니다.
+  const groups=new Map();
+  for(const s of mine){
+    if(!groups.has(s.group)) groups.set(s.group,{name:s.groupLabel, items:[], start:null, boat:s.access.key==='boat'});
+    const g=groups.get(s.group);
+    g.items.push(s);
+    // 육상 접근은 장비 자체가, 선박은 항구가 육상 목적지입니다.
+    if(!g.start) g.start = s.access.key==='boat' ? s.portPt : (s.valid?s:null);
+  }
+
+  // 사무실 → 각 그룹 육상 목적지까지 한 번에 계산
+  const starts=[...groups.values()].map(g=>g.start).filter(Boolean);
+  const pts=[CONFIG.office, ...starts];
+  const m=starts.length ? await roadMatrix(pts) : {mode:'straight',dist:[[0]],dur:[[null]]};
+
+  btn.disabled=false; renderTags();
+
+  let idx=0, totalMin=0, totalKm=0;
+  const cards=[...groups.values()].map(g=>{
+    let drive=null;
+    if(g.start){
+      idx++;
+      drive=legInfo(m,pts,0,idx);
+      totalKm+=drive.km*2;                       // 왕복
+      totalMin+=drive.min*2;
+    }
+    const sail=g.items.reduce((a,s)=>a+(s.boatMin||0),0)*2;   // 왕복 항해
+    totalMin+=sail;
+    const waves=g.items.map(s=>s.wave).filter(w=>w!=null);
+
+    return `<div class="port-card">
+      <div class="port-head">
+        <b>${esc(g.name)}</b>
+        <span class="port-cnt">${g.items.length}곳</span>
+      </div>
+      ${g.start?`<div class="leg">
+        <span class="leg-path">${esc(CONFIG.office.name)} <b>→</b> ${esc(g.start.name)}</span>
+        <span class="leg-dist${drive.road?'':' straight'}">${drive.road?'도로':'직선'} 약 ${fmtKm(drive.km)}km
+          · ${drive.road?'약':'예상'} ${fmtMin(drive.min)}</span>
+        <a class="leg-nav" href="${navLink(CONFIG.office,g.start)}" target="_blank" rel="noopener">${ICON.nav} 길안내</a>
+      </div>`:`<div class="leg"><span class="leg-warn">항구 좌표가 없어 육상 경로를 계산하지 못했습니다.</span></div>`}
+      <ul class="port-list">
+        ${g.items.map(s=>`<li>
+          <button class="step-link" data-act="open" data-id="${esc(s.id)}">
+            <span class="step-name">${esc(s.name)}</span>${badge(s)}<span class="step-more">현황 보기</span>
+          </button>
+          <span class="port-meta">${esc(s.kind.label)}${
+            s.boatMin?` · 편도 항해 약 ${fmtMin(s.boatMin)}`:' · 항해 시간 미입력'}${
+            s.wave?` · 파고 ${s.wave}m 이하`:''}</span>
+        </li>`).join('')}
+      </ul>
+      <div class="port-foot">
+        ${g.boat?`왕복 항해 약 ${fmtMin(sail)}`:'차로 가서 걸어서 접근'}
+        ${g.boat&&waves.length?` · 출항 조건 <b>파고 ${Math.min(...waves)}m 이하</b>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  box.innerHTML = `
+    ${m.error?`<div class="route-warn">항구까지 도로 거리를 가져오지 못해 <b>직선거리</b>로 계산했습니다. (${esc(m.error)})</div>`:''}
+    <div class="route-total">
+      <div class="route-sum"><span>육상 이동거리 (왕복)</span><b>약 ${fmtKm(totalKm)} km</b></div>
+      <div class="route-sum"><span>총 소요시간</span><b>예상 ${fmtMin(totalMin)}</b></div>
+      <em>육상 왕복 + 항해 왕복 합계입니다. <b>점검 작업 시간과 대기 시간은 빠져 있습니다.</b></em>
+    </div>
+    ${cards}
+    ${byVendor.length?`<div class="route-warn">
+      <b>업체 점검 장비 ${byVendor.length}곳</b>은 일정에서 제외했습니다 —
+      ${byVendor.map(s=>esc(s.name)).join(', ')}</div>`:''}`;
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
 async function calcRoute(){
+  if(state.tab==='marine') return calcSailing();
   const list=state.picked.map(id=>state.stations.find(x=>x.id===id)).filter(Boolean);
   if(!list.length) return;
   const box=document.getElementById('routeResult');
@@ -1039,6 +1420,14 @@ async function calcRoute(){
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
+/* 사진 주소 만들기 —
+   CSV에 파일명만 적으면 저장소 폴더에서, http로 시작하는 주소를 적으면 그 주소에서 가져옵니다.
+   사진이 많아 저장소에 담기 어려우면 별도 서버에 두고 주소를 적으면 됩니다. */
+function mediaUrl(dir, value){
+  const v=(value||'').trim();
+  return /^https?:\/\//i.test(v) ? v : dir+encodeURIComponent(v);
+}
+
 /* ========================= ⑤ 파노라마 ========================= */
 function renderPano(s){
   const wrap=document.getElementById('panoWrap');
@@ -1053,13 +1442,18 @@ function renderPano(s){
     </div>`;
     return;
   }
+  const src=mediaUrl(CONFIG.panoDir, s.panorama);
   wrap.innerHTML = `<div class="pano" id="pano"><div class="pano-hint" id="panoHint">← 좌우로 드래그해서 둘러보세요 →</div></div>`;
   const el=document.getElementById('pano');
   const img=new Image();
-  img.onload=()=>setupPano(el, CONFIG.panoDir+s.panorama);
-  img.onerror=()=>{ wrap.innerHTML=`<div class="pano-empty">${ICON.vr}<b>사진을 불러오지 못했습니다</b>
-    <span>panoramas/${esc(s.panorama)} 파일이 있는지 확인해 주세요.</span></div>`; };
-  img.src=CONFIG.panoDir+s.panorama;
+  img.onload=()=>setupPano(el, src);
+  /* 아직 촬영·등록되지 않은 지점이 대부분이라, 못 불러온 것을 오류처럼 보이지 않게 적습니다.
+     주소는 함께 보여줘서 실제로 잘못된 경우 확인할 수 있게 했습니다. */
+  img.onerror=()=>{ wrap.innerHTML=`<div class="pano-empty">${ICON.vr}
+    <b>아직 등록된 사진이 없습니다</b>
+    <span>사진을 올렸는데도 보이지 않으면 주소를 확인해 주세요.<br>
+      <code style="font-size:11.5px;opacity:.75">${esc(src)}</code></span></div>`; };
+  img.src=src;
 }
 
 function setupPano(el, src){
@@ -1106,7 +1500,7 @@ function bindEvents(){
     state.mode=b.dataset.m;
     [...document.querySelectorAll('#modes .chip')].forEach(c=>c.setAttribute('aria-pressed', String(c===b)));
     const q=document.getElementById('q');
-    q.placeholder=MODE_PLACEHOLDER[state.mode];
+    q.placeholder=MODE_PLACEHOLDER[state.tab][state.mode];
     q.focus();
     renderList();
     if(state.query.trim()) setListOpen(true);
@@ -1117,6 +1511,15 @@ function bindEvents(){
     const b=e.target.closest('.chip'); if(!b) return;
     state.filter=b.dataset.f;
     [...document.querySelectorAll('#chips .chip')].forEach(c=>c.setAttribute('aria-pressed', String(c===b)));
+    renderList();
+  });
+
+  // 종류 필터 (해양 탭에만 있습니다)
+  const kinds=document.getElementById('kinds');
+  if(kinds) kinds.addEventListener('click',e=>{
+    const b=e.target.closest('.chip'); if(!b) return;
+    state.kind=b.dataset.k;
+    [...kinds.querySelectorAll('.chip')].forEach(c=>c.setAttribute('aria-pressed', String(c===b)));
     renderList();
   });
 
@@ -1151,6 +1554,18 @@ function bindEvents(){
   document.getElementById('calcBtn').addEventListener('click',calcRoute);
   renderTags();
 }
+
+/* 지상 ↔ 해양 전환 — 담아 둔 목록과 검색어는 탭마다 뜻이 달라 초기화합니다. */
+document.getElementById('tabs').addEventListener('click',e=>{
+  const b=e.target.closest('.tab'); if(!b || b.dataset.tab===state.tab) return;
+  state.tab=b.dataset.tab;
+  [...document.querySelectorAll('#tabs .tab')].forEach(t=>t.setAttribute('aria-pressed', String(t===b)));
+  Object.assign(state,{ filter:'all', kind:'all', query:'', mode:'all', listOpen:false,
+                        picked:[], selected:null, markerLayer:null, markers:{}, bounds:null });
+  closeSheet();
+  render();
+  window.scrollTo({top:0,behavior:'smooth'});
+});
 
 document.getElementById('dim').addEventListener('click',closeSheet);
 document.getElementById('sheetClose').addEventListener('click',closeSheet);
@@ -1187,6 +1602,16 @@ async function start(){
 
   const rows=parseCSV(text);
   state.stations=rows.map(buildStation).filter(s=>s.id||s.name!=='(이름 없음)');
+
+  // 해양장비 — 파일이 없어도 지상 화면은 그대로 동작합니다.
+  try{
+    const res=await fetch(CONFIG.marineCsvPath,{cache:'no-store'});
+    if(res.ok){
+      state.marine=parseCSV(await res.text()).map(buildMarine)
+        .filter(s=>s.id||s.name!=='(이름 없음)');
+      state.marineLoaded=true;
+    }
+  }catch(err){ /* 해양 탭에서 안내 문구로 알립니다 */ }
 
   if(!state.stations.length){
     document.getElementById('app').innerHTML=`<div class="empty" style="padding:60px 20px">
