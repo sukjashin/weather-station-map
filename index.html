@@ -58,7 +58,7 @@ header{
 header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-.5px}
 header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 
-/* ===== 지상 / 해양 탭 ===== */
+/* ===== 지상 / 지진 탭 ===== */
 .tabs{
   display:flex;gap:8px;padding:14px 18px 0;max-width:540px;margin:0 auto;
 }
@@ -247,7 +247,7 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
   background:var(--unknown-bg);color:var(--unknown);font-size:12.5px;
 }
 
-/* ===== 해양장비 ===== */
+/* ===== 지진장비 ===== */
 .empty-guide{
   border:1px dashed var(--line);border-radius:var(--radius);background:var(--bg);
   padding:20px 18px;font-size:13.5px;line-height:1.6;color:var(--muted);
@@ -362,10 +362,10 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
     </div>
   </header>
 
-  <!-- 지상 / 해양 전환 -->
+  <!-- 지상 / 지진 전환 -->
   <nav class="tabs" id="tabs" aria-label="장비 종류">
     <button class="tab" data-tab="land" aria-pressed="true">지상 AWS</button>
-    <button class="tab" data-tab="marine" aria-pressed="false">해양장비</button>
+    <button class="tab" data-tab="seismic" aria-pressed="false">지진장비</button>
   </nav>
 
   <div class="banner" id="banner"></div>
@@ -381,7 +381,7 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
       <div class="foot-row"><dt>데이터 기준</dt><dd id="dataBase">-</dd></div>
     </dl>
     <p class="foot-note">
-      장비 정보는 <code>data/stations.csv</code>(지상)와 <code>data/marine.csv</code>(해양) 파일을 읽어 표시합니다.<br>
+      장비 정보는 <code>data/stations.csv</code>(지상)와 <code>data/seismic.csv</code>(지진) 파일을 읽어 표시합니다.<br>
       경로 거리·시간은 도로 기준으로 계산하지만 <b>실시간 교통 상황은 반영되지 않습니다</b>.
     </p>
   </footer>
@@ -412,13 +412,13 @@ const CONFIG = {
   maxPick: 8,        // 한 번에 고를 수 있는 장비 수
   soonDays: 30,      // 예정일까지 이 일수 이내면 '곧 도래'
   csvPath: 'data/stations.csv',
-  marineCsvPath: 'data/marine.csv',   // 해양장비 (파일이 없으면 해양 탭에 안내만 뜹니다)
+  seismicCsvPath: 'data/seismic.csv',   // 지진장비 (파일이 없으면 지진 탭에 안내만 뜹니다)
   /* 사진을 어디서 가져올지. 폴더 이름이면 저장소 안에서, 주소면 그 서버에서 받아옵니다.
      CSV에 파일명만 적으면 여기에 이어 붙고, 전체 주소를 적으면 그 주소를 그대로 씁니다. */
   panoDir: 'https://www.kma.go.kr/gwangju/panoramas/',   // 관측노장 360° 파노라마
-  photoDir: 'photos/',                                   // 해양장비 사진
+  photoDir: 'photos/',                                   // 지진장비 사진
 
-  // 해상 기상 확인용 링크 — 출항 전 파고·풍속 확인
+  // 해상 기상 확인용 링크 — 도서 지점 출항 전 파고·풍속 확인
   seaForecastUrl: 'https://www.weather.go.kr/w/ocean/marine/forecast.do',
 
   /* 지도 배경 타일. 지도에서 유일하게 외부에서 받아오는 부분입니다.
@@ -661,16 +661,16 @@ function buildStation(raw){
   return s;
 }
 
-/* 해양장비 한 줄을 화면에서 쓸 형태로 만듭니다.
+/* 지진장비 한 줄을 화면에서 쓸 형태로 만듭니다.
    점검일·주기로 상태를 매기는 부분은 지상 장비와 같습니다. */
-function buildMarine(raw){
+function buildSeismic(raw){
   const s=buildStation(raw);
   const portLat=parseFloat(raw.port_lat), portLon=parseFloat(raw.port_lon);
   const boat=parseInt(raw.boat_min,10);
   const wave=parseFloat(raw.wave_limit);
-  s.kind   = KIND[KIND_ALIAS[(raw.kind||'').trim()]] || KIND.etc;
+  s.kind   = kindOf(raw.kind);
   s.access = ACCESS[ACCESS_ALIAS[(raw.access||'').trim()]] || ACCESS.boat;
-  s.seaArea= raw.sea_area||'';
+  s.region = raw.region || raw.sea_area || '';
   s.port   = raw.port||'';
   s.portPt = Number.isFinite(portLat)&&Number.isFinite(portLon)
              ? { name:s.port||'출항 항구', lat:portLat, lon:portLon, address:raw.port_address||'' } : null;
@@ -689,28 +689,28 @@ function buildMarine(raw){
 
 /* ========================= 상태 저장소 ========================= */
 const state = { tab:'land',
-                stations:[], marine:[], marineLoaded:false,
+                stations:[], seismic:[], seismicLoaded:false,
                 filter:'all', kind:'all', query:'', mode:'all', listOpen:false,
                 picked:[], selected:null,
                 map:null, mapCleanup:null, markerLayer:null, markers:{}, bounds:null, pano:null };
 
 // 지금 탭에서 다루는 장비 목록
-function items(){ return state.tab==='marine' ? state.marine : state.stations; }
+function items(){ return state.tab==='seismic' ? state.seismic : state.stations; }
 
-/* 해양장비 종류·접근 방식 */
-const KIND = {
-  buoy:    { key:'buoy',    label:'해양기상부이' },
-  light:   { key:'light',   label:'등표관측장비' },
-  wave:    { key:'wave',    label:'파고부이·파랑계' },
-  coast:   { key:'coast',   label:'연안·항만' },
-  etc:     { key:'etc',     label:'기타' }
-};
-const KIND_ALIAS = {
-  '부이':'buoy','해양기상부이':'buoy','buoy':'buoy',
-  '등표':'light','등표기상관측장비':'light','등대':'light','light':'light',
-  '파고':'wave','파고부이':'wave','파랑계':'wave','wave':'wave',
-  '연안':'coast','항만':'coast','연안방재':'coast','coast':'coast'
-};
+/* 지진장비 종류·접근 방식 */
+
+/* 종류는 CSV의 kind 칸에 적힌 값을 그대로 씁니다.
+   장비 구분이 바뀌어도 코드를 고칠 필요가 없습니다. */
+function kindOf(raw){
+  const label=(raw||'').trim() || '기타';
+  return { key:label, label };
+}
+/* 지금 등록된 자료에 실제로 들어 있는 종류만 모아 줍니다 (필터 버튼용). */
+function kindList(){
+  const seen=new Map();
+  state.seismic.forEach(s=>{ if(!seen.has(s.kind.key)) seen.set(s.kind.key, s.kind); });
+  return [...seen.values()];
+}
 const ACCESS = {
   boat:   { key:'boat',   label:'선박 출항',   desc:'배를 타고 나가야 합니다' },
   land:   { key:'land',   label:'육상 접근',   desc:'차로 가서 걸어서 접근합니다' },
@@ -729,16 +729,16 @@ const MODE_PLACEHOLDER = {
     addr: '주소로 검색 (예: 목포시)',
     id:   '관측장비번호로 검색 (예: 165)'
   },
-  marine: {
-    all:  '지점명 · 해역 · 항구 · 번호 검색',
-    addr: '해역이나 출항 항구로 검색 (예: 목포항)',
+  seismic: {
+    all:  '지점명 · 지역 · 항구 · 번호 검색',
+    addr: '지역이나 출항 항구로 검색 (예: 흑산도, 목포항)',
     id:   '관측장비번호로 검색'
   }
 };
 
 /* ========================= 화면 그리기 ========================= */
 function render(){
-  if(state.tab==='marine') return renderMarine();
+  if(state.tab==='seismic') return renderSeismic();
   document.getElementById('app').className='';
   document.getElementById('app').innerHTML = `
   <!-- ③ 지도 + 목록 -->
@@ -803,27 +803,26 @@ function render(){
   renderPano(null);
 }
 
-/* ========================= 해양장비 화면 ========================= */
-function renderMarine(){
+/* ========================= 지진장비 화면 ========================= */
+function renderSeismic(){
   const app=document.getElementById('app');
   app.className='';
 
-  if(!state.marine.length){
-    app.innerHTML=`<section><h2>해양장비 점검</h2>
+  if(!state.seismic.length){
+    app.innerHTML=`<section><h2>지진장비 점검</h2>
       <div class="empty-guide">
-        <b>${state.marineLoaded?'등록된 해양장비가 없습니다.':'해양장비 자료를 읽지 못했습니다.'}</b>
-        <p><code>data/marine.csv</code>를 만들고 아래 칸을 채우면 이 화면에 나타납니다.
+        <b>${state.seismicLoaded?'등록된 지진장비가 없습니다.':'지진장비 자료를 읽지 못했습니다.'}</b>
+        <p><code>data/seismic.csv</code>를 만들고 아래 칸을 채우면 이 화면에 나타납니다.
            엑셀로 열어 수정한 뒤 <b>UTF-8 CSV</b>로 저장하세요.</p>
         <ul class="col-help">
           <li><code>station_id</code> 관측장비번호 · <code>name</code> 지점명</li>
-          <li><code>kind</code> 부이 / 등표 / 파고 / 연안</li>
-          <li><code>lat</code>, <code>lon</code> 장비 좌표 · <code>sea_area</code> 해역</li>
+          <li><code>kind</code> 장비 종류 (적은 값이 그대로 필터 버튼이 됩니다)</li>
+          <li><code>lat</code>, <code>lon</code> 장비 좌표 · <code>region</code> 지역</li>
           <li><code>access</code> 선박 / 육상 / 업체</li>
-          <li><code>port</code>, <code>port_lat</code>, <code>port_lon</code> 출항 항구와 좌표</li>
-          <li><code>boat_min</code> 항구에서 편도 항해 시간(분)</li>
-          <li><code>wave_limit</code> 점검 가능 파고(m)</li>
+          <li><code>port</code>, <code>port_lat</code>, <code>port_lon</code> 출항 항구와 좌표 <i>(도서 지점만)</i></li>
+          <li><code>boat_min</code> 항구에서 편도 항해 시간(분) <i>(도서 지점만)</i></li>
+          <li><code>wave_limit</code> 출항 가능 파고(m) <i>(도서 지점만)</i></li>
           <li><code>vendor</code>, <code>vendor_tel</code> 유지보수 업체·연락처</li>
-          <li><code>last_check</code>, <code>cycle_months</code> 점검일·주기</li>
           <li><code>photo</code> 사진 파일명 · <code>note</code> 비고</li>
         </ul>
       </div></section>`;
@@ -832,7 +831,7 @@ function renderMarine(){
 
   app.innerHTML = `
   <section>
-    <h2>지도 · 해양장비 목록</h2>
+    <h2>지도 · 지진장비 목록</h2>
     <p class="sec-desc">목록에서 장비를 누르면 지도에 위치가 표시됩니다.
       <b>＋ 담기</b>로 고른 점검 대상도 함께 핀으로 보입니다.</p>
     <div id="map"></div>
@@ -848,13 +847,12 @@ function renderMarine(){
     </div>
 
     <button class="list-toggle" id="listToggle" type="button" aria-expanded="false" aria-controls="listBox">
-      해양장비 목록 <span class="cnt" id="listCount"></span> <span class="caret">▼</span>
+      지진장비 목록 <span class="cnt" id="listCount"></span> <span class="caret">▼</span>
     </button>
     <div id="listBox" hidden>
       <div class="chips" id="kinds">
         <button class="chip" data-k="all" aria-pressed="true">전체 종류</button>
-        ${Object.values(KIND).filter(k=>state.marine.some(s=>s.kind.key===k.key))
-          .map(k=>`<button class="chip" data-k="${k.key}" aria-pressed="false">${k.label}</button>`).join('')}
+        ${kindList().map(k=>`<button class="chip" data-k="${esc(k.key)}" aria-pressed="false">${esc(k.label)}</button>`).join('')}
       </div>
       <div class="chips" id="chips">
         <button class="chip" data-f="all" aria-pressed="true">전체 상태</button>
@@ -883,7 +881,7 @@ function renderMarine(){
 
   <section id="seaSec">
     <h2>출항 전 확인</h2>
-    <p class="sec-desc">해양장비 점검은 파고·풍속 조건이 맞아야 나갈 수 있습니다.</p>
+    <p class="sec-desc">도서 지점은 파고·풍속 조건이 맞아야 나갈 수 있습니다.</p>
     <div class="sea-box">
       <ul class="info">
         <li><b>담은 장비 중 가장 낮은 파고 조건</b><span id="waveWorst">-</span></li>
@@ -904,7 +902,7 @@ function renderMarine(){
    업체가 점검하는 장비는 우리가 배를 띄우지 않으므로 셈에서 뺍니다. */
 function updateWaveWorst(){
   const el=document.getElementById('waveWorst'); if(!el) return;
-  const sail=state.picked.map(id=>state.marine.find(s=>s.id===id))
+  const sail=state.picked.map(id=>state.seismic.find(s=>s.id===id))
     .filter(s=>s && s.access.key==='boat');
   const waves=sail.map(s=>s.wave).filter(w=>w!=null);
   el.textContent = !sail.length ? '선박으로 나가는 장비 없음'
@@ -918,13 +916,13 @@ function badge(s){
 
 function visible(){
   const q=state.query.trim().toLowerCase();
-  const marine=state.tab==='marine';
+  const seismic=state.tab==='seismic';
   return items().filter(s=>{
     if(state.filter!=='all' && s.status.key!==state.filter) return false;
-    if(marine && state.kind!=='all' && s.kind.key!==state.kind) return false;
+    if(seismic && state.kind!=='all' && s.kind.key!==state.kind) return false;
     if(!q) return true;
-    // 해양은 '주소 검색' 자리를 해역·항구 검색으로 씁니다.
-    const where = marine ? `${s.seaArea} ${s.port} ${s.address}` : s.address;
+    // 지진은 '주소 검색' 자리를 지역·항구 검색으로 씁니다.
+    const where = seismic ? `${s.region} ${s.port} ${s.address}` : s.address;
     const hay = state.mode==='addr' ? where
               : state.mode==='id'   ? s.id
               : (s.name+' '+where+' '+s.id);
@@ -949,10 +947,10 @@ function renderList(){
     const nextTxt = s.next
       ? `다음 점검 <b>${fmtDate(s.next)}</b>` + (s.days<0 ? ` · <b style="color:var(--due)">${-s.days}일 경과</b>` : ` · ${s.days}일 남음`)
       : `<b style="color:var(--unknown)">점검 정보 확인 필요</b>`;
-    // 해양은 주소 대신 종류·해역·접근 방식을 보여줍니다.
-    const sub = state.tab==='marine'
+    // 지진은 주소 대신 종류·지역·접근 방식을 보여줍니다.
+    const sub = state.tab==='seismic'
       ? `${esc(s.kind.label)} · ${esc(s.access.label)}`
-        + (s.seaArea?` · ${esc(s.seaArea)}`:'')
+        + (s.region?` · ${esc(s.region)}`:'')
         + (s.port?` · 출항 ${esc(s.port)}`:'')
       : esc(s.address)||'주소 없음';
     return `<li class="item ${on?'picked':''}" data-id="${esc(s.id)}">
@@ -1034,18 +1032,18 @@ function syncMarkers(){
   // 출장지를 담았을 때만 사무실(출발·도착지)을 함께 보여줍니다.
   if(state.picked.length) put(CONFIG.office.lat, CONFIG.office.lon, 'pin-office', CONFIG.office.name, null, 28);
 
-  // 해양 탭에서는 담은 장비의 출항 항구도 함께 보여줍니다.
-  if(state.tab==='marine'){
+  // 지진 탭에서는 담은 장비의 출항 항구도 함께 보여줍니다.
+  if(state.tab==='seismic'){
     const seen=new Set();
     for(const id of state.picked){
-      const s=state.marine.find(x=>x.id===id);
+      const s=state.seismic.find(x=>x.id===id);
       if(!s || !s.portPt || seen.has(s.port)) continue;
       seen.add(s.port);
       put(s.portPt.lat, s.portPt.lon, 'pin-port', `${s.port} · 출항 항구`, null, 26);
     }
   }
 
-  const pickLabel = state.tab==='marine' ? '점검 대상' : '출장지';
+  const pickLabel = state.tab==='seismic' ? '점검 대상' : '출장지';
   for(const id of state.picked){
     if(id===state.selected) continue;                 // 선택 핀으로 대신 표시
     const s=items().find(x=>x.id===id);
@@ -1063,7 +1061,7 @@ function syncMarkers(){
 /* ========================= 바텀시트 ========================= */
 function openSheet(id){
   const s=items().find(x=>x.id===id); if(!s) return;
-  const marine=state.tab==='marine';
+  const seismic=state.tab==='seismic';
   // 선택한 장비를 지도에 핀으로 띄우고 그 위치로 옮깁니다.
   state.selected=id;
   syncMarkers();
@@ -1078,8 +1076,8 @@ function openSheet(id){
       <li><b>좌표</b><span>${s.valid?`${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`:'확인 필요'}</span></li>`;
 
   let info, subtitle, buttons;
-  if(marine){
-    subtitle = [s.kind.label, s.seaArea].filter(Boolean).join(' · ') || '해양장비';
+  if(seismic){
+    subtitle = [s.kind.label, s.region].filter(Boolean).join(' · ') || '지진장비';
     info = `
       <li><b>접근 방식</b><span>${esc(s.access.label)}</span></li>
       ${s.port?`<li><b>출항 항구</b><span>${esc(s.port)}${s.boatMin?` · 편도 약 ${fmtMin(s.boatMin)}`:''}</span></li>`:''}
@@ -1130,7 +1128,7 @@ function renderTags(){
   btn.disabled = state.picked.length===0;
   btn.textContent = state.picked.length===0
     ? '장비를 담아주세요'
-    : state.tab==='marine'
+    : state.tab==='seismic'
       ? `${state.picked.length}곳 출항 계획 짜기`
       : `${state.picked.length}곳 방문 순서 계산하기`;
 }
@@ -1274,10 +1272,10 @@ function legRow(m,pts,leg){
   </div>`;
 }
 
-/* 해양 — 출항 항구별로 묶어 하루 일정을 만듭니다.
+/* 지진 — 출항 항구별로 묶어 하루 일정을 만듭니다.
    사무실→항구는 도로 기준, 항구→장비는 CSV의 항해 시간을 씁니다. */
 async function calcSailing(){
-  const list=state.picked.map(id=>state.marine.find(x=>x.id===id)).filter(Boolean);
+  const list=state.picked.map(id=>state.seismic.find(x=>x.id===id)).filter(Boolean);
   if(!list.length) return;
   const box=document.getElementById('routeResult');
   const btn=document.getElementById('calcBtn');
@@ -1362,7 +1360,7 @@ async function calcSailing(){
 }
 
 async function calcRoute(){
-  if(state.tab==='marine') return calcSailing();
+  if(state.tab==='seismic') return calcSailing();
   const list=state.picked.map(id=>state.stations.find(x=>x.id===id)).filter(Boolean);
   if(!list.length) return;
   const box=document.getElementById('routeResult');
@@ -1514,7 +1512,7 @@ function bindEvents(){
     renderList();
   });
 
-  // 종류 필터 (해양 탭에만 있습니다)
+  // 종류 필터 (지진 탭에만 있습니다)
   const kinds=document.getElementById('kinds');
   if(kinds) kinds.addEventListener('click',e=>{
     const b=e.target.closest('.chip'); if(!b) return;
@@ -1555,7 +1553,7 @@ function bindEvents(){
   renderTags();
 }
 
-/* 지상 ↔ 해양 전환 — 담아 둔 목록과 검색어는 탭마다 뜻이 달라 초기화합니다. */
+/* 지상 ↔ 지진 전환 — 담아 둔 목록과 검색어는 탭마다 뜻이 달라 초기화합니다. */
 document.getElementById('tabs').addEventListener('click',e=>{
   const b=e.target.closest('.tab'); if(!b || b.dataset.tab===state.tab) return;
   state.tab=b.dataset.tab;
@@ -1603,15 +1601,15 @@ async function start(){
   const rows=parseCSV(text);
   state.stations=rows.map(buildStation).filter(s=>s.id||s.name!=='(이름 없음)');
 
-  // 해양장비 — 파일이 없어도 지상 화면은 그대로 동작합니다.
+  // 지진장비 — 파일이 없어도 지상 화면은 그대로 동작합니다.
   try{
-    const res=await fetch(CONFIG.marineCsvPath,{cache:'no-store'});
+    const res=await fetch(CONFIG.seismicCsvPath,{cache:'no-store'});
     if(res.ok){
-      state.marine=parseCSV(await res.text()).map(buildMarine)
+      state.seismic=parseCSV(await res.text()).map(buildSeismic)
         .filter(s=>s.id||s.name!=='(이름 없음)');
-      state.marineLoaded=true;
+      state.seismicLoaded=true;
     }
-  }catch(err){ /* 해양 탭에서 안내 문구로 알립니다 */ }
+  }catch(err){ /* 지진 탭에서 안내 문구로 알립니다 */ }
 
   if(!state.stations.length){
     document.getElementById('app').innerHTML=`<div class="empty" style="padding:60px 20px">
