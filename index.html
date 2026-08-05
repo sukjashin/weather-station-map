@@ -365,7 +365,7 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
   <!-- 지상 / 해양 전환 -->
   <nav class="tabs" id="tabs" aria-label="장비 종류">
     <button class="tab" data-tab="land" aria-pressed="true">지상 AWS</button>
-    <button class="tab" data-tab="marine" aria-pressed="false">해양장비</button>
+    <a class="tab" href="observation_support_site/index.html">관측차량</a>
   </nav>
 
   <div class="banner" id="banner"></div>
@@ -1557,7 +1557,7 @@ function bindEvents(){
 
 /* 지상 ↔ 해양 전환 — 담아 둔 목록과 검색어는 탭마다 뜻이 달라 초기화합니다. */
 document.getElementById('tabs').addEventListener('click',e=>{
-  const b=e.target.closest('.tab'); if(!b || b.dataset.tab===state.tab) return;
+  const b=e.target.closest('.tab'); if(!b || !b.dataset.tab || b.dataset.tab===state.tab) return;
   state.tab=b.dataset.tab;
   [...document.querySelectorAll('#tabs .tab')].forEach(t=>t.setAttribute('aria-pressed', String(t===b)));
   Object.assign(state,{ filter:'all', kind:'all', query:'', mode:'all', listOpen:false,

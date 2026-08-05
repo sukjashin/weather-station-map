@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>관측출장 지원 시스템</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <h1>☀️ 🚙 관측출장 지원 시스템</h1>
+      <p>폭염 · 도로 살얼음 관측 지원</p>
+    </div>
+
+    <section class="section">
+      <h2>1 출장 목적 선택</h2>
+      <div class="purpose-grid">
+        <button class="purpose-btn active">☀️ 폭염관측</button>
+        <button class="purpose-btn">❄️ 도로 살얼음 관측</button>
+        <button class="purpose-btn">🌧️ 호우 관측</button>
+        <button class="purpose-btn">💨 강풍 관측</button>
+        <button class="purpose-btn">☁️ 안개 관측</button>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>2 출장지 주소 검색</h2>
+      <div class="search-row">
+        <input id="addressInput" value="광주광역시" placeholder="주소 또는 지역명을 입력하세요" />
+        <button class="primary" id="searchBtn">검색</button>
+      </div>
+      <div class="address-result"><span id="addressText">광주광역시</span><span>✕</span></div>
+    </section>
+
+    <section class="section">
+      <h2>3 검색 옵션</h2>
+      <div style="font-size:13px;font-weight:800;margin-bottom:8px">검색 반경</div>
+      <div class="option-row">
+        <label><input type="radio" name="radius" value="500"> 500m</label>
+        <label><input type="radio" name="radius" value="1000" checked> 1km</label>
+        <label><input type="radio" name="radius" value="2000"> 2km</label>
+        <label><input type="radio" name="radius" value="3000"> 3km</label>
+      </div>
+      <div style="font-size:13px;font-weight:800;margin-bottom:8px">교통수단</div>
+      <div class="transport"><button>전체</button><button>🚗</button><button>🚶</button></div>
+      <label style="display:block;margin-top:12px;font-size:13px"><input type="checkbox" checked> 현재 기상 및 폭염 정보 반영</label>
+      <button class="primary cta" id="recommendBtn">추천 장소 보기</button>
+    </section>
+
+    <section class="section">
+      <h2>AWS 관측소 CSV 업로드</h2>
+      <input id="awsCsvInput" type="file" accept=".csv" />
+      <div id="awsUploadStatus" style="font-size:13px;color:var(--muted);margin-top:8px">AWS 관측소 CSV 파일을 업로드하면 추천에 반영합니다.</div>
+    </section>
+
+    <section class="section criteria">
+      <h2>💡 폭염 관측 추천 기준</h2>
+      <ul>
+        <li>햇빛 노출이 많은 개방된 공간</li>
+        <li>아스팔트·콘크리트 등 열에 노출된 지면</li>
+        <li>그늘 및 휴식공간 이용 가능</li>
+        <li>주차 및 편의시설 접근성</li>
+        <li>관측 장비 설치 및 안전 확보 용이</li>
+      </ul>
+    </section>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div>
+        <h2>추천 장소 TOP 3 <span style="font-size:13px;color:var(--blue);background:#edf4ff;padding:6px 10px;border-radius:999px">폭염관측 기준</span></h2>
+        <div class="sub">광주광역시 기준 검색 반경 1km</div>
+      </div>
+      <div class="top-actions"></div>
+    </header>
+
+    <section class="panel">
+      <div class="recommendations"></div>
+      <div class="note">ⓘ 추천은 시설 유형, 거리, 접근성 등을 기준으로 자동 계산됩니다.</div>
+    </section>
+
+    <section class="workspace">
+      <div class="leftcol">
+        <div class="panel">
+          <h3 style="margin-top:0">4 선택 장소 상세 정보 <span id="selectedPlace" style="font-size:13px;color:var(--muted)"></span></h3>
+          <div class="map-detail">
+            <div class="map" id="leafletMap"></div>
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <b>출장 적합도</b><span id="selectedScore" style="font-size:26px;font-weight:900">96점 <span id="selectedStars" class="stars" style="font-size:15px">★★★★★</span></span>
+              </div>
+              <div id="selectedBadge" class="badge" style="margin:8px 0 10px">매우 적합</div>
+              <div class="detail-list">
+                <div class="facility"><span>🅿️</span><span id="facilityParking">주차시설　80m　무료</span><b id="facilityParkingStatus" style="color:var(--green)">이용 가능</b></div>
+                <div class="facility"><span>🚻</span><span id="facilityToilet">화장실　120m　공중화장실</span><b id="facilityToiletStatus" style="color:var(--green)">이용 가능</b></div>
+                <div class="facility"><span>🏪</span><span id="facilityStore">편의점　180m　GS25</span><b id="facilityStoreStatus" style="color:var(--green)">24시간</b></div>
+                <div class="facility"><span>🌳</span><span id="facilityRest">휴게공간　230m　정자/그늘</span><b id="facilityRestStatus" style="color:var(--green)">이용 가능</b></div>
+              </div>
+              <div id="awsStationInfo" style="margin:10px 0 0;font-size:13px;color:var(--blue);">AWS 관측소 정보를 업로드하면 주변 관측소 반영 결과를 표시합니다.</div>
+              <h4>출장 메모</h4>
+              <textarea placeholder="메모 내용을 입력하세요..."></textarea>
+              <div style="text-align:right;margin-top:8px"><button class="primary" id="saveMemo">저장</button></div>
+            </div>
+          </div>
+          <div class="weather-grid">
+            <div class="weather-card">현재 날씨 (순천시)<b>☀️ 33.2℃</b><span style="color:var(--muted);font-size:12px">체감온도 34.8℃ · 습도 58%</span></div>
+            <div class="weather-card">WBGT <span style="color:#d97706">(주의)</span><b>🌡️ 28.4℃</b><span class="badge">주의 수준</span></div>
+            <div class="weather-card">폭염특보<b style="color:var(--danger)">폭염경보</b><span style="font-size:12px;color:var(--muted)">2024-06-02 10:00 발표</span></div>
+            <div class="weather-card">일출/일몰<b style="font-size:18px">05:22 / 19:42</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rightcol">
+        <section class="panel">
+          <h3 style="margin-top:0">5 추천 장소 비교</h3>
+          <table>
+            <thead><tr><th>구분</th><th>국가정원</th><th>오천광장</th><th>순천역</th></tr></thead>
+            <tbody>
+              <tr><td>출장 적합도</td><td><b>96점</b></td><td><b>92점</b></td><td><b>89점</b></td></tr>
+              <tr><td>주차시설</td><td>40</td><td>38</td><td>40</td></tr>
+              <tr><td>화장실</td><td>30</td><td>28</td><td>25</td></tr>
+              <tr><td>편의점</td><td>20</td><td>18</td><td>20</td></tr>
+              <tr><td>휴게공간</td><td>6</td><td>8</td><td>4</td></tr>
+              <tr><td>추천 등급</td><td class="stars">★★★★★</td><td class="stars">★★★★☆</td><td class="stars">★★★★☆</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="script.js?v=3"></script>
+</body>
+</html>
