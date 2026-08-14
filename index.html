@@ -65,6 +65,7 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 .tab{
   flex:1;padding:11px 8px;border:1.5px solid var(--line);border-radius:11px;
   background:#fff;color:var(--muted);font-size:14.5px;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none;
 }
 .tab[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
 
@@ -161,8 +162,33 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
   background:var(--navy);width:34px;height:34px;
   box-shadow:0 0 0 4px rgba(21,101,192,.28), 0 3px 8px rgba(0,0,0,.4);
 }
+.mascot-pin svg{display:block;filter:drop-shadow(0 2px 5px rgba(13,47,92,.4))}
+
+/* 지도 한 켠에 붙어 상황을 알려주는 마스코트 */
+.map-wrap{position:relative}
+.map-mascot{
+  position:absolute;right:10px;bottom:10px;width:56px;height:auto;
+  pointer-events:none;filter:drop-shadow(0 3px 7px rgba(13,47,92,.35));
+  transition:opacity .15s;z-index:450;
+}
+.map-mascot[hidden]{display:none}
 
 /* ===== ④ 경로 ===== */
+.route-intro{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.route-intro img{width:44px;height:auto;flex:0 0 auto}
+.route-intro span{font-size:13px;color:var(--muted);font-weight:600;line-height:1.4}
+.route-mascot-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.route-mascot-row img{width:50px;height:auto;flex:0 0 auto}
+.route-mascot-row span{
+  font-size:12.5px;font-weight:700;color:#fff;background:rgba(255,255,255,.16);
+  padding:6px 10px;border-radius:10px;line-height:1.4;
+}
+.route-rest-tip{
+  display:flex;align-items:center;gap:9px;margin-top:10px;padding:9px 11px;
+  background:#eaf3fb;border:1px solid #cfe3f5;border-radius:10px;
+}
+.route-rest-tip img{width:38px;height:auto;flex:0 0 auto}
+.route-rest-tip span{font-size:12.5px;color:#0d3b82;font-weight:600;line-height:1.45}
 .route-box{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:15px}
 .route-from{font-size:13.5px;color:var(--muted);margin:0 0 10px}
 .route-from b{color:var(--ink)}
@@ -254,6 +280,9 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 }
 .empty-guide b{display:block;color:var(--ink);font-size:15px;margin-bottom:8px}
 .empty-guide p{margin:0 0 12px}
+.empty-guide-mascot{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.empty-guide-mascot img{width:48px;height:auto;flex:0 0 auto}
+.empty-guide-mascot span{font-size:12.5px;color:var(--muted);font-weight:600;line-height:1.4}
 .col-help{margin:0;padding-left:18px}
 .col-help li{margin-bottom:3px}
 .col-help code{font-size:12px}
@@ -564,6 +593,60 @@ const ICON = {
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5.5 5.5L20 6"/></svg>'
 };
 
+/* 장거리 출장 운전의 고단함을 표현한 마스코트 — 목록을 담는 정도, 이동 거리에 맞춰 보여줍니다. */
+const MASCOT = {
+  start:  { src:'assets/mascot/mascot-start.png',      alt:'출발! 장비를 하나씩 담아보세요' },
+  good:   { src:'assets/mascot/mascot-good.png',        alt:'좋아! 가까운 거리예요' },
+  doing:  { src:'assets/mascot/mascot-doing-well.png',  alt:'잘 하고 있어!' },
+  fight:  { src:'assets/mascot/mascot-fighting.png',    alt:'힘내! 오늘도 화이팅' },
+  effort: { src:'assets/mascot/mascot-effort.png',      alt:'조금 멀어도 우리가 해낼 수 있어요!' },
+  tired:  { src:'assets/mascot/mascot-tired.png',       alt:'조금 힘들지만.. 곧 도착해요!' },
+  rest:   { src:'assets/mascot/mascot-rest.png',        alt:'잠깐 쉬고 다시 출발해요!' }
+};
+
+// 지도 옆 마스코트 — 담은 장비 수(=오늘 다닐 곳)가 많을수록 힘내는 톤으로 바뀝니다.
+function mascotForPickCount(n){
+  if(n<=0) return MASCOT.start;
+  if(n<=2) return MASCOT.doing;
+  if(n<=5) return MASCOT.fight;
+  return MASCOT.effort;
+}
+
+// 경로 계산 결과의 왕복 거리(km) — 운전이 얼마나 고될지 마스코트로 보여줍니다.
+function mascotForKm(km){
+  if(km<=20) return MASCOT.good;
+  if(km<=60) return MASCOT.fight;
+  if(km<=120) return MASCOT.effort;
+  return MASCOT.tired;
+}
+
+function updateMapMascot(){
+  const img=document.getElementById('mapMascot');
+  if(!img) return;
+  const m=mascotForPickCount(state.picked.length);
+  img.src=m.src; img.alt=m.alt; img.title=m.alt; img.hidden=false;
+}
+
+function updateRouteIntro(){
+  const box=document.getElementById('routeIntro');
+  if(!box) return;
+  box.innerHTML = state.picked.length
+    ? ''
+    : `<div class="route-intro"><img src="${MASCOT.start.src}" alt="${MASCOT.start.alt}">
+        <span>운전 거리가 있는 출장, 목록에서 장비를 하나씩 담아 오늘의 경로를 계획해보세요.</span></div>`;
+}
+
+function mascotRowHTML(km){
+  const m=mascotForKm(km);
+  return `<div class="route-mascot-row"><img src="${m.src}" alt="${m.alt}"><span>${m.alt}</span></div>`;
+}
+
+function restTipHTML(km){
+  if(km<=120) return '';
+  return `<div class="route-rest-tip"><img src="${MASCOT.rest.src}" alt="${MASCOT.rest.alt}">
+    <span>왕복 ${fmtKm(km)}km, 장거리 운전입니다. 중간에 잠깐 쉬어가며 안전하게 이동하세요.</span></div>`;
+}
+
 const STATUS = {
   ok:      { key:'ok',      label:'정상',     cls:'b-ok',      pin:'pin-ok',      letter:'정' },
   soon:    { key:'soon',    label:'곧 도래',  cls:'b-soon',    pin:'pin-soon',    letter:'곧' },
@@ -746,7 +829,10 @@ function render(){
     <h2>지도 · 장비 목록</h2>
     <p class="sec-desc">목록에서 장비를 누르면 지도에 위치가 표시됩니다.
       <b>＋ 담기</b>로 고른 출장지도 함께 핀으로 보입니다.</p>
-    <div id="map"></div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <img class="map-mascot" id="mapMascot" src="" alt="" hidden>
+    </div>
     <div class="map-fail" id="mapFail">지도를 불러오지 못했습니다. 아래 목록은 정상적으로 이용할 수 있습니다.</div>
     <div class="tools">
       <input class="search" id="q" type="search" placeholder="지점명 · 주소 · 번호 검색" autocomplete="off">
@@ -778,6 +864,7 @@ function render(){
     <p class="sec-desc">위 <b>관측장비 목록</b>을 펼친 뒤 <b>＋</b> 버튼으로 장비를 담으면 방문 순서를 계산합니다.</p>
     <div class="route-box">
       <p class="route-from">출발 · 도착 &nbsp;<b>${esc(CONFIG.office.name)}</b> (왕복 기준)</p>
+      <div id="routeIntro"></div>
       <div class="picked-tags" id="tags"></div>
       <button class="btn" id="calcBtn" disabled>장비를 담아주세요</button>
       <p class="route-note">최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다.
@@ -811,6 +898,8 @@ function renderMarine(){
   if(!state.marine.length){
     app.innerHTML=`<section><h2>해양장비 점검</h2>
       <div class="empty-guide">
+        <div class="empty-guide-mascot"><img src="${MASCOT.start.src}" alt="${MASCOT.start.alt}">
+          <span>관측차량 데이터를 채워주시면, 오늘의 출항 경로도 함께 챙겨드릴게요.</span></div>
         <b>${state.marineLoaded?'등록된 해양장비가 없습니다.':'해양장비 자료를 읽지 못했습니다.'}</b>
         <p><code>data/marine.csv</code>를 만들고 아래 칸을 채우면 이 화면에 나타납니다.
            엑셀로 열어 수정한 뒤 <b>UTF-8 CSV</b>로 저장하세요.</p>
@@ -835,7 +924,10 @@ function renderMarine(){
     <h2>지도 · 해양장비 목록</h2>
     <p class="sec-desc">목록에서 장비를 누르면 지도에 위치가 표시됩니다.
       <b>＋ 담기</b>로 고른 점검 대상도 함께 핀으로 보입니다.</p>
-    <div id="map"></div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <img class="map-mascot" id="mapMascot" src="" alt="" hidden>
+    </div>
     <div class="map-fail" id="mapFail">지도를 불러오지 못했습니다. 아래 목록은 정상적으로 이용할 수 있습니다.</div>
     <div class="tools">
       <input class="search" id="q" type="search" placeholder="지점명 · 해역 · 항구 · 번호 검색" autocomplete="off">
@@ -872,6 +964,7 @@ function renderMarine(){
       배는 하루에 한 번 띄우는 것을 기준으로 했습니다.</p>
     <div class="route-box">
       <p class="route-from">육상 출발 &nbsp;<b>${esc(CONFIG.office.name)}</b></p>
+      <div id="routeIntro"></div>
       <div class="picked-tags" id="tags"></div>
       <button class="btn" id="calcBtn" disabled>장비를 담아주세요</button>
       <p class="route-note">최대 ${CONFIG.maxPick}곳까지 담을 수 있습니다.
@@ -918,11 +1011,11 @@ function badge(s){
 
 function visible(){
   const q=state.query.trim().toLowerCase();
+  if(!q) return [];               // 검색어를 입력하기 전에는 목록을 비워 둡니다.
   const marine=state.tab==='marine';
   return items().filter(s=>{
     if(state.filter!=='all' && s.status.key!==state.filter) return false;
     if(marine && state.kind!=='all' && s.kind.key!==state.kind) return false;
-    if(!q) return true;
     // 해양은 '주소 검색' 자리를 해역·항구 검색으로 씁니다.
     const where = marine ? `${s.seaArea} ${s.port} ${s.address}` : s.address;
     const hay = state.mode==='addr' ? where
@@ -942,8 +1035,12 @@ function setListOpen(open){
 function renderList(){
   const ul=document.getElementById('list');
   const rows=visible();
-  document.getElementById('listCount').textContent=`${rows.length}곳`;
-  if(!rows.length){ ul.innerHTML=`<li class="empty">조건에 맞는 장비가 없습니다.</li>`; return; }
+  const hasQuery=state.query.trim().length>0;
+  document.getElementById('listCount').textContent = hasQuery ? `${rows.length}곳` : `전체 ${items().length}곳 · 검색 필요`;
+  if(!rows.length){
+    ul.innerHTML = `<li class="empty">${hasQuery ? '조건에 맞는 장비가 없습니다.' : '지점명·주소·번호를 검색하면 목록이 표시됩니다.'}</li>`;
+    return;
+  }
   ul.innerHTML = rows.map(s=>{
     const on=state.picked.includes(s.id);
     const nextTxt = s.next
@@ -1016,15 +1113,35 @@ function initMap(){
 
 /* 지도 핀을 다시 그립니다 — 선택한 장비 + 출장지로 담은 장비(+사무실)만 올립니다.
    핀에는 글씨를 넣지 않고, 이름은 눌렀을 때 말풍선으로 보여줍니다. */
+/* 출장지(담은 장비)용 마스코트 핀 — 말풍선 모양 몸통에 웃는 얼굴을 넣습니다. */
+function mascotPinHTML(size){
+  const w=size, h=Math.round(size*1.32);
+  return `<div class="mascot-pin" style="width:${w}px;height:${h}px">
+    <svg width="${w}" height="${h}" viewBox="0 0 44 58" xmlns="http://www.w3.org/2000/svg">
+      <path d="M22 3C11.507 3 3 11.507 3 22c0 15 19 32 19 32s19-17 19-32C41 11.507 32.493 3 22 3z"
+        fill="#0d2f5c" stroke="#ffffff" stroke-width="2"/>
+      <circle cx="22" cy="22" r="16" fill="#8dc0f2"/>
+      <circle cx="22" cy="23" r="12" fill="#fdf1e2"/>
+      <ellipse cx="17.5" cy="21" rx="1.7" ry="2.3" fill="#0d2f5c"/>
+      <ellipse cx="26.5" cy="21" rx="1.7" ry="2.3" fill="#0d2f5c"/>
+      <ellipse cx="14.8" cy="26" rx="2.6" ry="1.6" fill="#fbb7ad"/>
+      <ellipse cx="29.2" cy="26" rx="2.6" ry="1.6" fill="#fbb7ad"/>
+      <path d="M18.5 25.3c1 2.3 2.6 3.4 3.5 3.4s2.5-1.1 3.5-3.4" stroke="#ee6b60" stroke-width="2.3" stroke-linecap="round" fill="none"/>
+    </svg>
+  </div>`;
+}
+
 function syncMarkers(){
   if(!state.map || !state.markerLayer) return;
   state.markerLayer.clearLayers();
   state.markers={};
 
   const put=(lat,lon,cls,label,onClick,size)=>{
+    const html = cls==='pin-pick' ? mascotPinHTML(size) : `<div class="pin ${cls}"></div>`;
+    const h = cls==='pin-pick' ? Math.round(size*1.32) : size;
     const m=L.marker([lat,lon],{
-      icon:L.divIcon({className:'',html:`<div class="pin ${cls}"></div>`,
-        iconSize:[size,size], iconAnchor:[size/2,size-2]})
+      icon:L.divIcon({className:'',html,
+        iconSize:[size,h], iconAnchor:[size/2,h-2]})
     }).addTo(state.markerLayer);
     m.bindTooltip(label);
     if(onClick) m.on('click',onClick);
@@ -1058,6 +1175,8 @@ function syncMarkers(){
     state.markers[sel.id]=put(sel.lat,sel.lon,'pin-sel',
       picked?`${sel.name} · ${pickLabel}`:sel.name, ()=>openSheet(sel.id), 34);
   }
+
+  updateMapMascot();
 }
 
 /* ========================= 바텀시트 ========================= */
@@ -1133,6 +1252,7 @@ function renderTags(){
     : state.tab==='marine'
       ? `${state.picked.length}곳 출항 계획 짜기`
       : `${state.picked.length}곳 방문 순서 계산하기`;
+  updateRouteIntro();
 }
 
 function togglePick(id){
@@ -1350,10 +1470,12 @@ async function calcSailing(){
   box.innerHTML = `
     ${m.error?`<div class="route-warn">항구까지 도로 거리를 가져오지 못해 <b>직선거리</b>로 계산했습니다. (${esc(m.error)})</div>`:''}
     <div class="route-total">
+      ${mascotRowHTML(totalKm)}
       <div class="route-sum"><span>육상 이동거리 (왕복)</span><b>약 ${fmtKm(totalKm)} km</b></div>
       <div class="route-sum"><span>총 소요시간</span><b>예상 ${fmtMin(totalMin)}</b></div>
       <em>육상 왕복 + 항해 왕복 합계입니다. <b>점검 작업 시간과 대기 시간은 빠져 있습니다.</b></em>
     </div>
+    ${restTipHTML(totalKm)}
     ${cards}
     ${byVendor.length?`<div class="route-warn">
       <b>업체 점검 장비 ${byVendor.length}곳</b>은 일정에서 제외했습니다 —
@@ -1408,6 +1530,7 @@ async function calcRoute(){
   box.innerHTML = `
     ${m.error?`<div class="route-warn">도로 거리를 가져오지 못해 <b>직선거리</b>로 계산했습니다. (${esc(m.error)})</div>`:''}
     <div class="route-total">
+      ${mascotRowHTML(r.total)}
       <div class="route-sum">
         <span>총 이동거리</span><b>약 ${fmtKm(r.total)} km</b>
       </div>
@@ -1416,6 +1539,7 @@ async function calcRoute(){
       </div>
       <em>${basis} · 실시간 교통 상황은 반영되지 않습니다</em>
     </div>
+    ${restTipHTML(r.total)}
     <ul class="steps">${steps}</ul>`;
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }

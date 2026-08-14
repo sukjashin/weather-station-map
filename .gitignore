@@ -4,6 +4,12 @@
 # 로컬 개발용 (깃에 올리지 않음)
 .claude/
 
+# Kakao REST API 키 (개인 키, 깃에 올리지 않음)
+observation_support_site/config.js
+
 # 편집기
 .vscode/
 .idea/
+
+# 의존성 (package.json 없음, 로컬 테스트용)
+node_modules/
