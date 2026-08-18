@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>저장된 출장지 목록</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .saved-wrap{max-width:760px;margin:0 auto;padding:0 0 40px}
+    .saved-list{display:grid;gap:14px;padding:20px 24px}
+    .saved-card{background:#fff;border:1.5px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+    .saved-card-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+    .saved-place{font-weight:700;font-size:16px;color:#0f172a}
+    .saved-date{font-size:12px;color:var(--muted);white-space:nowrap}
+    .saved-content{font-size:13.5px;color:#334155;line-height:1.6;white-space:pre-wrap;margin:8px 0 12px}
+    .saved-content:empty::before{content:'메모 내용이 없습니다.';color:var(--muted);font-style:italic}
+    .saved-actions{display:flex;justify-content:flex-end;gap:8px}
+    .saved-actions button{
+      border:1.5px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;
+      font-size:13px;font-weight:600;cursor:pointer;color:#475569;transition:all .2s
+    }
+    .saved-actions .load-btn{border-color:var(--blue);color:var(--blue)}
+    .saved-actions .load-btn:hover{background:#f0f7ff}
+    .saved-actions .delete-btn:hover{border-color:var(--danger);color:var(--danger);background:#fef2f2}
+    .saved-empty{padding:60px 24px;text-align:center;color:var(--muted)}
+    .saved-empty b{display:block;font-size:16px;color:#0f172a;margin-bottom:6px}
+  </style>
+</head>
+<body>
+<div class="saved-wrap">
+  <div class="brand">
+    <a class="back-link" href="index.html">← 출장지 검색으로 돌아가기</a>
+    <h1>📋 저장된 출장지 목록</h1>
+    <p>선택 장소 상세 정보에서 저장한 메모를 모아 봅니다.</p>
+  </div>
+
+  <div class="saved-list" id="savedList"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const MEMO_STORAGE_KEY = 'observationMemos';
+
+  const toast = (msg) => {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 1800);
+  };
+
+  const loadMemos = () => {
+    try {
+      const raw = localStorage.getItem(MEMO_STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {
+      console.error('Failed to load saved memos:', e);
+    }
+    // 이전 버전(단일 메모 1건 저장)과의 호환
+    try {
+      const legacy = localStorage.getItem('observationMemo');
+      if (legacy) {
+        const data = JSON.parse(legacy);
+        const migrated = [{ id: Date.now(), ...data }];
+        localStorage.setItem(MEMO_STORAGE_KEY, JSON.stringify(migrated));
+        localStorage.removeItem('observationMemo');
+        return migrated;
+      }
+    } catch (e) {
+      console.error('Failed to migrate legacy memo:', e);
+    }
+    return [];
+  };
+
+  const saveMemos = (list) => localStorage.setItem(MEMO_STORAGE_KEY, JSON.stringify(list));
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+
+  const render = () => {
+    const list = document.getElementById('savedList');
+    const memos = loadMemos().slice().reverse(); // 최근 저장한 것부터 보여줍니다.
+
+    if (!memos.length) {
+      list.innerHTML = `<div class="saved-empty">
+        <b>아직 저장된 출장지가 없습니다.</b>
+        출장지 검색에서 장소를 고르고 "선택 장소 상세 정보"의 저장 버튼을 누르면 여기에 쌓입니다.
+      </div>`;
+      return;
+    }
+
+    list.innerHTML = memos.map(m => `
+      <div class="saved-card" data-id="${esc(m.id)}">
+        <div class="saved-card-top">
+          <span class="saved-place">${esc(m.place || '미선택')}</span>
+          <span class="saved-date">${esc(m.savedAt || '')}</span>
+        </div>
+        <div class="saved-content">${esc(m.content || '')}</div>
+        <div class="saved-actions">
+          <button class="delete-btn" data-act="delete" data-id="${esc(m.id)}">삭제</button>
+          <button class="load-btn" data-act="load" data-id="${esc(m.id)}">이 메모 불러오기</button>
+        </div>
+      </div>
+    `).join('');
+  };
+
+  document.getElementById('savedList').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+
+    if (btn.dataset.act === 'delete') {
+      const memos = loadMemos().filter(m => String(m.id) !== id);
+      saveMemos(memos);
+      toast('메모를 삭제했습니다.');
+      render();
+    }
+
+    if (btn.dataset.act === 'load') {
+      location.href = `index.html?memoId=${encodeURIComponent(id)}`;
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>

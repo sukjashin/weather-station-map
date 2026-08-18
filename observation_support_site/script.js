@@ -1,6 +1,12 @@
-const KAKAO_REST_API_KEY = '65a11e738b52dec78519e94aacd942fa';
+// API key should be set via environment variable or backend proxy
+// DO NOT expose API keys in client-side code
+const KAKAO_REST_API_KEY = window.KAKAO_API_KEY || '';
 const KAKAO_ADDRESS_SEARCH_URL = 'https://dapi.kakao.com/v2/local/search/address.json';
 const KAKAO_KEYWORD_SEARCH_URL = 'https://dapi.kakao.com/v2/local/search/keyword.json';
+
+if (!KAKAO_REST_API_KEY) {
+  console.warn('⚠️ Kakao API key is not configured. Please set window.KAKAO_API_KEY or use a backend proxy.');
+}
 
 const FALLBACK_RECOMMENDATIONS = [
   {
@@ -57,6 +63,26 @@ let awsStationMarkers = null;
 let currentPlaces = [];
 let awsStations = [];
 
+// 출장지 지도목록 전용 마커 아이콘 — 원형 과녁 무늬가 들어간 네이비 핀
+const createPinIcon = ({ size = 40, fill = '#0d3b82' } = {}) => {
+  const w = size;
+  const h = Math.round(size * 1.3);
+  return L.divIcon({
+    className: 'kw-pin-icon',
+    html: `
+      <svg width="${w}" height="${h}" viewBox="0 0 40 52" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 1C9.507 1 1 9.507 1 20c0 14.5 19 30.5 19 30.5S39 34.5 39 20C39 9.507 30.493 1 20 1z"
+          fill="${fill}" stroke="#ffffff" stroke-width="2.5"/>
+        <circle cx="20" cy="20" r="11" fill="#ffffff"/>
+        <circle cx="20" cy="20" r="8" fill="${fill}"/>
+        <circle cx="20" cy="20" r="3.6" fill="#ffffff"/>
+      </svg>`,
+    iconSize: [w, h],
+    iconAnchor: [w / 2, h - 2],
+    popupAnchor: [0, -h + 8]
+  });
+};
+
 const initMap = () => {
   map = L.map('leafletMap', {
     zoomControl: false,
@@ -68,7 +94,7 @@ const initMap = () => {
     subdomains: ['mt0','mt1','mt2','mt3']
   }).addTo(map);
 
-  mapMarker = L.marker([35.1595, 126.8526]).addTo(map).bindPopup('광주 기본 위치').openPopup();
+  mapMarker = L.marker([35.1595, 126.8526], { icon: createPinIcon() }).addTo(map).bindPopup('광주 기본 위치').openPopup();
   setTimeout(() => {
     if (map) map.invalidateSize();
   }, 150);
@@ -82,7 +108,7 @@ const updateMap = (x, y, label = '선택 위치') => {
   if (mapMarker) {
     mapMarker.setLatLng([lat, lng]).setPopupContent(label).openPopup();
   } else {
-    mapMarker = L.marker([lat, lng]).addTo(map).bindPopup(label).openPopup();
+    mapMarker = L.marker([lat, lng], { icon: createPinIcon() }).addTo(map).bindPopup(label).openPopup();
   }
 };
 
@@ -162,7 +188,10 @@ const updateWeatherUI = (name, lat, lon) => {
     // leave existing content if weather fetch fails
   });
 };
+const NO_API_KEY_MESSAGE = 'Kakao API 키가 설정되지 않았습니다. observation_support_site/config.example.js를 config.js로 복사하고 발급받은 REST API 키를 넣어주세요.';
+
 const fetchKakaoAddress = async (query) => {
+  if (!KAKAO_REST_API_KEY) throw new Error(NO_API_KEY_MESSAGE);
   const url = `${KAKAO_ADDRESS_SEARCH_URL}?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, {
     headers: {
@@ -172,6 +201,9 @@ const fetchKakaoAddress = async (query) => {
 
   if (!res.ok) {
     const err = await res.text();
+    if (res.status === 401) {
+      throw new Error('Kakao API 키가 유효하지 않습니다. config.js의 키 값과 카카오 개발자 콘솔의 플랫폼(Web) 등록 도메인을 확인하세요.');
+    }
     if (res.status === 403 && err.includes('disabled OPEN_MAP_AND_LOCAL service')) {
       throw new Error('Kakao 앱에서 OPEN_MAP_AND_LOCAL 서비스가 비활성화되었습니다. 카카오 개발자 콘솔에서 해당 서비스를 활성화하세요.');
     }
@@ -183,6 +215,7 @@ const fetchKakaoAddress = async (query) => {
 };
 
 const fetchKakaoKeyword = async (keyword, x, y, radius = 2000) => {
+  if (!KAKAO_REST_API_KEY) throw new Error(NO_API_KEY_MESSAGE);
   const url = `${KAKAO_KEYWORD_SEARCH_URL}?query=${encodeURIComponent(keyword)}&x=${x}&y=${y}&radius=${radius}&size=10`;
   const res = await fetch(url, {
     headers: {
@@ -192,6 +225,9 @@ const fetchKakaoKeyword = async (keyword, x, y, radius = 2000) => {
 
   if (!res.ok) {
     const err = await res.text();
+    if (res.status === 401) {
+      throw new Error('Kakao API 키가 유효하지 않습니다. config.js의 키 값과 카카오 개발자 콘솔의 플랫폼(Web) 등록 도메인을 확인하세요.');
+    }
     throw new Error(`Kakao 키워드 검색 오류: ${res.status} ${err}`);
   }
 
@@ -409,7 +445,7 @@ const renderRecommendations = (places) => {
     const name = place.place_name;
     if (!isNaN(lat) && !isNaN(lng) && map) {
       try {
-        const marker = L.marker([lat, lng]).addTo(map).bindPopup(`<b>${name}</b><br>${place.address_name || ''}`);
+        const marker = L.marker([lat, lng], { icon: createPinIcon({ size: 34, fill: '#1f6fe5' }) }).addTo(map).bindPopup(`<b>${name}</b><br>${place.address_name || ''}`);
         placeMarkers[name] = marker;
         marker.on('click', () => {
           document.getElementById('selectedPlace').textContent = `(${name})`;
@@ -482,15 +518,50 @@ const bindDetailButtons = () => {
   });
 };
 
-const loadInitialUI = () => {
-  document.querySelectorAll('.purpose-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.purpose-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      toast(btn.textContent.trim() + '으로 변경했습니다.');
-    });
-  });
+// 출장 메모는 여러 건을 목록으로 쌓아 저장합니다 (observation_support_site/saved.html에서 모아 봅니다).
+const MEMO_STORAGE_KEY = 'observationMemos';
 
+const loadMemos = () => {
+  try {
+    const raw = localStorage.getItem(MEMO_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to load saved memos:', e);
+  }
+  // 이전 버전(단일 메모 1건 저장)과의 호환 — 있으면 목록으로 옮겨줍니다.
+  try {
+    const legacy = localStorage.getItem('observationMemo');
+    if (legacy) {
+      const data = JSON.parse(legacy);
+      const migrated = [{ id: Date.now(), ...data }];
+      localStorage.setItem(MEMO_STORAGE_KEY, JSON.stringify(migrated));
+      localStorage.removeItem('observationMemo');
+      return migrated;
+    }
+  } catch (e) {
+    console.error('Failed to migrate legacy memo:', e);
+  }
+  return [];
+};
+
+const saveMemos = (list) => {
+  localStorage.setItem(MEMO_STORAGE_KEY, JSON.stringify(list));
+};
+
+// 마지막으로 저장한 출장 메모(또는 URL의 memoId로 지정한 메모)를 상세 정보 영역에 먼저 보여줍니다.
+const restoreSavedMemo = () => {
+  const memos = loadMemos();
+  if (!memos.length) return;
+  const memoId = new URLSearchParams(location.search).get('memoId');
+  const data = (memoId && memos.find(m => String(m.id) === memoId)) || memos[memos.length - 1];
+  const textarea = document.querySelector('textarea');
+  if (textarea && data.content) textarea.value = data.content;
+  const selectedPlace = document.getElementById('selectedPlace');
+  if (selectedPlace && data.place && data.place !== '미선택') selectedPlace.textContent = data.place;
+  toast(`저장된 메모(${data.savedAt})를 불러왔습니다.`);
+};
+
+const loadInitialUI = () => {
   document.getElementById('searchBtn').addEventListener('click', async () => {
     const input = document.getElementById('addressInput');
     const query = normalize(input.value) || '광주광역시';
@@ -586,7 +657,29 @@ const loadInitialUI = () => {
   });
 
   const saveMemoBtn = document.getElementById('saveMemo');
-  if (saveMemoBtn) saveMemoBtn.addEventListener('click', () => toast('출장 메모를 저장했습니다.'));
+  if (saveMemoBtn) {
+    saveMemoBtn.addEventListener('click', () => {
+      const textarea = document.querySelector('textarea');
+      const selectedPlace = document.getElementById('selectedPlace').textContent || '미선택';
+      const memo = textarea ? textarea.value : '';
+      const timestamp = new Date().toLocaleString('ko-KR');
+      const memoData = {
+        id: Date.now(),
+        place: selectedPlace,
+        content: memo,
+        savedAt: timestamp
+      };
+      try {
+        const memos = loadMemos();
+        memos.push(memoData);
+        saveMemos(memos);
+        toast('✅ 출장 메모가 저장되었습니다.');
+      } catch (e) {
+        console.error('Failed to save memo:', e);
+        toast('❌ 메모 저장에 실패했습니다.');
+      }
+    });
+  }
 
   const pdfBtn = document.getElementById('pdfBtn');
   if (pdfBtn) pdfBtn.addEventListener('click', () => window.print());
@@ -597,36 +690,7 @@ const loadInitialUI = () => {
   const historyBtn = document.getElementById('historyBtn');
   if (historyBtn) historyBtn.addEventListener('click', () => toast('출장 기록 등록 화면을 준비 중입니다.'));
 
-  const awsCsvInput = document.getElementById('awsCsvInput');
-  const awsUploadStatus = document.getElementById('awsUploadStatus');
-  if (awsCsvInput) {
-    awsCsvInput.addEventListener('change', async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      const text = await file.text();
-      const rows = parseCsv(text);
-      awsStations = rows.map(row => ({
-        ...row,
-        latitude: row.lat || row.latitude || row.y || row.n_lat || row.latitude_deg || row.lat_deg || '',
-        longitude: row.lon || row.longitude || row.x || row.n_lon || row.lng || row.lon_deg || ''
-      }));
-      if (awsUploadStatus) awsUploadStatus.textContent = `AWS 관측소 ${rows.length}개가 업로드되어 추천에 반영됩니다.`;
-      toast('AWS 관측소 CSV가 업로드되었습니다.');
-      if (map && awsStations.length) {
-        if (awsStationMarkers) {
-          awsStationMarkers.forEach(marker => map.removeLayer(marker));
-        }
-        awsStationMarkers = awsStations.map(station => {
-          const sLat = Number(station.latitude);
-          const sLng = Number(station.longitude);
-          if (Number.isNaN(sLat) || Number.isNaN(sLng)) return null;
-          const marker = L.circleMarker([sLat, sLng], { radius: 6, color: '#ff6600', fillColor: '#ffcc00', fillOpacity: 0.8 }).addTo(map);
-          marker.bindPopup(`<b>AWS 관측소</b><br>${station.name || station.station_id || station.station_name || station.id || ''}`);
-          return marker;
-        }).filter(Boolean);
-      }
-    });
-  }
+  // AWS CSV upload removed as per requirements
 
   initMap();
   const defaultQuery = '광주광역시';
@@ -634,6 +698,7 @@ const loadInitialUI = () => {
   bindDetailButtons();
   const initRadius = getSearchRadius();
   updateHeaderSub(`${defaultQuery} 기준 검색 반경 ${initRadius >= 1000 ? (initRadius/1000)+'km' : initRadius+'m'}`);
+  restoreSavedMemo();
 };
 
 loadInitialUI();

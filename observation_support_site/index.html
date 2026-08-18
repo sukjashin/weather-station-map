@@ -11,23 +11,13 @@
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <h1>☀️ 🚙 관측출장 지원 시스템</h1>
-      <p>폭염 · 도로 살얼음 관측 지원</p>
+      <a class="back-link" href="../index.html">← 지상 AWS로 돌아가기</a>
+      <h1>🚙 기상 관측 출장 지원</h1>
+      <p>실시간 관측 지원 시스템</p>
     </div>
 
     <section class="section">
-      <h2>1 출장 목적 선택</h2>
-      <div class="purpose-grid">
-        <button class="purpose-btn active">☀️ 폭염관측</button>
-        <button class="purpose-btn">❄️ 도로 살얼음 관측</button>
-        <button class="purpose-btn">🌧️ 호우 관측</button>
-        <button class="purpose-btn">💨 강풍 관측</button>
-        <button class="purpose-btn">☁️ 안개 관측</button>
-      </div>
-    </section>
-
-    <section class="section">
-      <h2>2 출장지 주소 검색</h2>
+      <h2>1 출장지 주소 검색</h2>
       <div class="search-row">
         <input id="addressInput" value="광주광역시" placeholder="주소 또는 지역명을 입력하세요" />
         <button class="primary" id="searchBtn">검색</button>
@@ -36,7 +26,7 @@
     </section>
 
     <section class="section">
-      <h2>3 검색 옵션</h2>
+      <h2>2 검색 옵션</h2>
       <div style="font-size:13px;font-weight:800;margin-bottom:8px">검색 반경</div>
       <div class="option-row">
         <label><input type="radio" name="radius" value="500"> 500m</label>
@@ -50,17 +40,9 @@
       <button class="primary cta" id="recommendBtn">추천 장소 보기</button>
     </section>
 
-    <section class="section">
-      <h2>AWS 관측소 CSV 업로드</h2>
-      <input id="awsCsvInput" type="file" accept=".csv" />
-      <div id="awsUploadStatus" style="font-size:13px;color:var(--muted);margin-top:8px">AWS 관측소 CSV 파일을 업로드하면 추천에 반영합니다.</div>
-    </section>
-
     <section class="section criteria">
-      <h2>💡 폭염 관측 추천 기준</h2>
+      <h2>💡 관측지 추천 기준</h2>
       <ul>
-        <li>햇빛 노출이 많은 개방된 공간</li>
-        <li>아스팔트·콘크리트 등 열에 노출된 지면</li>
         <li>그늘 및 휴식공간 이용 가능</li>
         <li>주차 및 편의시설 접근성</li>
         <li>관측 장비 설치 및 안전 확보 용이</li>
@@ -71,7 +53,7 @@
   <main>
     <header class="topbar">
       <div>
-        <h2>추천 장소 TOP 3 <span style="font-size:13px;color:var(--blue);background:#edf4ff;padding:6px 10px;border-radius:999px">폭염관측 기준</span></h2>
+        <h2>추천 장소 TOP 3 <span style="font-size:13px;color:var(--blue);background:#edf4ff;padding:6px 10px;border-radius:999px">관측지 기준</span></h2>
         <div class="sub">광주광역시 기준 검색 반경 1km</div>
       </div>
       <div class="top-actions"></div>
@@ -85,7 +67,7 @@
     <section class="workspace">
       <div class="leftcol">
         <div class="panel">
-          <h3 style="margin-top:0">4 선택 장소 상세 정보 <span id="selectedPlace" style="font-size:13px;color:var(--muted)"></span></h3>
+          <h3 style="margin-top:0">3 선택 장소 상세 정보 <span id="selectedPlace" style="font-size:13px;color:var(--muted)"></span></h3>
           <div class="map-detail">
             <div class="map" id="leafletMap"></div>
             <div>
@@ -102,7 +84,10 @@
               <div id="awsStationInfo" style="margin:10px 0 0;font-size:13px;color:var(--blue);">AWS 관측소 정보를 업로드하면 주변 관측소 반영 결과를 표시합니다.</div>
               <h4>출장 메모</h4>
               <textarea placeholder="메모 내용을 입력하세요..."></textarea>
-              <div style="text-align:right;margin-top:8px"><button class="primary" id="saveMemo">저장</button></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+                <a href="saved.html" style="font-size:13px;color:var(--blue);font-weight:600;text-decoration:none">📋 저장된 목록 보기</a>
+                <button class="primary" id="saveMemo">저장</button>
+              </div>
             </div>
           </div>
           <div class="weather-grid">
@@ -116,7 +101,7 @@
 
       <div class="rightcol">
         <section class="panel">
-          <h3 style="margin-top:0">5 추천 장소 비교</h3>
+          <h3 style="margin-top:0">4 추천 장소 비교</h3>
           <table>
             <thead><tr><th>구분</th><th>국가정원</th><th>오천광장</th><th>순천역</th></tr></thead>
             <tbody>
@@ -138,6 +123,8 @@
 <div class="toast" id="toast"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="script.js?v=3"></script>
+  <!-- config.js는 깃에 올리지 않는 개인 파일입니다. config.example.js를 복사해 만드세요. -->
+  <script src="config.js"></script>
+  <script src="script.js?v=4"></script>
 </body>
 </html>
