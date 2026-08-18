@@ -4,10 +4,6 @@ const KAKAO_REST_API_KEY = window.KAKAO_API_KEY || '';
 const KAKAO_ADDRESS_SEARCH_URL = 'https://dapi.kakao.com/v2/local/search/address.json';
 const KAKAO_KEYWORD_SEARCH_URL = 'https://dapi.kakao.com/v2/local/search/keyword.json';
 
-if (!KAKAO_REST_API_KEY) {
-  console.warn('⚠️ Kakao API key is not configured. Please set window.KAKAO_API_KEY or use a backend proxy.');
-}
-
 const FALLBACK_RECOMMENDATIONS = [
   {
     place_name: '순천만국가정원 동문 주차장',
@@ -62,6 +58,44 @@ let placeMarkers = {};
 let awsStationMarkers = null;
 let currentPlaces = [];
 let awsStations = [];
+
+const loadAwsStations = async () => {
+  try {
+    const res = await fetch('../data/stations.csv', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`AWS CSV ${res.status}`);
+    awsStations = parseCsv(await res.text()).map(station => ({
+      ...station,
+      latitude: station.latitude || station.lat,
+      longitude: station.longitude || station.lon,
+      station_name: station.station_name || station.name
+    })).filter(station => Number.isFinite(Number(station.latitude)) && Number.isFinite(Number(station.longitude)));
+  } catch (error) {
+    awsStations = [];
+    console.error('AWS 관측소 자료를 불러오지 못했습니다.', error);
+  }
+};
+
+const findLocalAddress = (query) => {
+  const needle = normalize(query).toLowerCase();
+  const station = awsStations.find(item =>
+    normalize(item.name).toLowerCase() === needle ||
+    normalize(item.station_id).toLowerCase() === needle
+  ) || awsStations.find(item =>
+    normalize(`${item.name} ${item.address} ${item.station_id}`).toLowerCase().includes(needle)
+  );
+  if (station) {
+    return {
+      x: station.longitude,
+      y: station.latitude,
+      address_name: station.address || station.name,
+      road_address_name: station.address || station.name
+    };
+  }
+  if (/^광주(광역시)?$/.test(needle)) {
+    return { x: '126.8526', y: '35.1595', address_name: '광주광역시' };
+  }
+  return null;
+};
 
 // 출장지 지도목록 전용 마커 아이콘 — 원형 과녁 무늬가 들어간 네이비 핀
 const createPinIcon = ({ size = 40, fill = '#0d3b82' } = {}) => {
@@ -188,10 +222,8 @@ const updateWeatherUI = (name, lat, lon) => {
     // leave existing content if weather fetch fails
   });
 };
-const NO_API_KEY_MESSAGE = 'Kakao API 키가 설정되지 않았습니다. observation_support_site/config.example.js를 config.js로 복사하고 발급받은 REST API 키를 넣어주세요.';
-
 const fetchKakaoAddress = async (query) => {
-  if (!KAKAO_REST_API_KEY) throw new Error(NO_API_KEY_MESSAGE);
+  if (!KAKAO_REST_API_KEY) return findLocalAddress(query);
   const url = `${KAKAO_ADDRESS_SEARCH_URL}?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, {
     headers: {
@@ -215,7 +247,7 @@ const fetchKakaoAddress = async (query) => {
 };
 
 const fetchKakaoKeyword = async (keyword, x, y, radius = 2000) => {
-  if (!KAKAO_REST_API_KEY) throw new Error(NO_API_KEY_MESSAGE);
+  if (!KAKAO_REST_API_KEY) return [];
   const url = `${KAKAO_KEYWORD_SEARCH_URL}?query=${encodeURIComponent(keyword)}&x=${x}&y=${y}&radius=${radius}&size=10`;
   const res = await fetch(url, {
     headers: {
@@ -306,7 +338,8 @@ const buildAwsStationCandidates = (x, y, radius) => {
   if (!awsStations.length || Number.isNaN(centerLat) || Number.isNaN(centerLng)) return [];
   const rad = (deg) => deg * Math.PI / 180;
   const R = 6371e3;
-  const maxDistance = Math.max(radius, 10000);
+  // 시설 API를 사용할 수 없는 GitHub Pages에서도 가까운 실제 AWS 3곳을
+  // 추천할 수 있도록 거리순 후보를 항상 계산합니다.
   return awsStations.map(station => {
     const sLat = Number(station.latitude);
     const sLng = Number(station.longitude);
@@ -317,7 +350,7 @@ const buildAwsStationCandidates = (x, y, radius) => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     const distance = R * c;
     return { station, distance };
-  }).filter(Boolean).filter(item => item.distance <= maxDistance).sort((a,b) => a.distance - b.distance).slice(0, 3).map(item => {
+  }).filter(Boolean).sort((a,b) => a.distance - b.distance).slice(0, 3).map(item => {
     const distance = Math.round(item.distance);
     return {
       place_name: item.station.name || item.station.station_id || 'AWS 관측소',
@@ -327,8 +360,8 @@ const buildAwsStationCandidates = (x, y, radius) => {
       distance,
       category_name: '관측소/기상대',
       tag: 'AWS 관측소',
-      score: Math.min(100, 100 - Math.round(distance / 200)),
-      stars: 5,
+      score: Math.max(60, Math.min(100, 100 - Math.round(distance / 2000))),
+      stars: Math.max(3, Math.min(5, Math.ceil(Math.max(60, 100 - distance / 2000) / 20))),
       summary: `AWS 관측소 후보 (${formatDistance(distance)})`,
       awsStation: item.station,
       awsDistance: distance,
@@ -561,7 +594,8 @@ const restoreSavedMemo = () => {
   toast(`저장된 메모(${data.savedAt})를 불러왔습니다.`);
 };
 
-const loadInitialUI = () => {
+const loadInitialUI = async () => {
+  await loadAwsStations();
   document.getElementById('searchBtn').addEventListener('click', async () => {
     const input = document.getElementById('addressInput');
     const query = normalize(input.value) || '광주광역시';
@@ -644,7 +678,7 @@ const loadInitialUI = () => {
         toast('검색 결과가 부족하여 기본 추천을 표시합니다.');
       } else {
         renderRecommendations(topPlaces);
-        toast('규칙 기반 추천 장소를 보여드립니다.');
+        toast(KAKAO_REST_API_KEY ? '규칙 기반 추천 장소를 보여드립니다.' : '가까운 실제 AWS 관측소를 보여드립니다.');
       }
       bindDetailButtons();
     } catch (error) {
@@ -694,7 +728,8 @@ const loadInitialUI = () => {
 
   initMap();
   const defaultQuery = '광주광역시';
-  renderRecommendations(fallbackRecommendations(defaultQuery));
+  const defaultPlaces = buildAwsStationCandidates(lastAddress.x, lastAddress.y, getSearchRadius());
+  renderRecommendations(defaultPlaces.length ? defaultPlaces : fallbackRecommendations(defaultQuery));
   bindDetailButtons();
   const initRadius = getSearchRadius();
   updateHeaderSub(`${defaultQuery} 기준 검색 반경 ${initRadius >= 1000 ? (initRadius/1000)+'km' : initRadius+'m'}`);
