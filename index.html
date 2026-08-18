@@ -167,11 +167,33 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 /* 지도 한 켠에 붙어 상황을 알려주는 마스코트 */
 .map-wrap{position:relative}
 .map-mascot{
-  position:absolute;right:10px;bottom:10px;width:56px;height:auto;
+  position:absolute;right:10px;bottom:10px;
   pointer-events:none;filter:drop-shadow(0 3px 7px rgba(13,47,92,.35));
   transition:opacity .15s;z-index:450;
 }
 .map-mascot[hidden]{display:none}
+.mascot-sprite{display:inline-block;overflow:hidden;flex:0 0 auto;line-height:0;vertical-align:middle}
+.mascot-sprite img{display:block;max-width:none;height:auto}
+/* img/ 스프라이트 — IMG_8808(2×2), IMG_8807(상단+하단) */
+.mascot-s{
+  display:inline-block;flex:0 0 auto;background-repeat:no-repeat;
+  vertical-align:middle;
+}
+.mascot-s--fight,.mascot-s--good,.mascot-s--start,.mascot-s--doing{
+  aspect-ratio:3/2;background-image:url('img/IMG_8808.png');background-size:200% 200%;
+}
+.mascot-s--fight {background-position:0% 0%}
+.mascot-s--good  {background-position:100% 0%}
+.mascot-s--start {background-position:0% 100%}
+.mascot-s--doing {background-position:100% 100%}
+.mascot-s--effort{
+  aspect-ratio:3/1;background-image:url('img/IMG_8807.png');background-size:100% 200%;background-position:0% 0%;
+}
+.mascot-s--tired,.mascot-s--rest{
+  aspect-ratio:3/2;background-image:url('img/IMG_8807.png');background-size:200% 200%;
+}
+.mascot-s--tired{background-position:0% 100%}
+.mascot-s--rest {background-position:100% 100%}
 
 /* ===== ④ 경로 ===== */
 .route-intro{display:flex;align-items:center;gap:10px;margin-bottom:12px}
@@ -593,16 +615,20 @@ const ICON = {
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5.5 5.5L20 6"/></svg>'
 };
 
-/* 장거리 출장 운전의 고단함을 표현한 마스코트 — 목록을 담는 정도, 이동 거리에 맞춰 보여줍니다. */
+/* 장거리 출장 운전의 고단함을 표현한 마스코트 — img/ 폴더 스프라이트에서 잘라 표시합니다. */
 const MASCOT = {
-  start:  { src:'assets/mascot/mascot-start.png',      alt:'출발! 장비를 하나씩 담아보세요' },
-  good:   { src:'assets/mascot/mascot-good.png',        alt:'좋아! 가까운 거리예요' },
-  doing:  { src:'assets/mascot/mascot-doing-well.png',  alt:'잘 하고 있어!' },
-  fight:  { src:'assets/mascot/mascot-fighting.png',    alt:'힘내! 오늘도 화이팅' },
-  effort: { src:'assets/mascot/mascot-effort.png',      alt:'조금 멀어도 우리가 해낼 수 있어요!' },
-  tired:  { src:'assets/mascot/mascot-tired.png',       alt:'조금 힘들지만.. 곧 도착해요!' },
-  rest:   { src:'assets/mascot/mascot-rest.png',        alt:'잠깐 쉬고 다시 출발해요!' }
+  start:  { alt:'출발! 장비를 하나씩 담아보세요',       cls:'mascot-s--start' },
+  good:   { alt:'좋아! 가까운 거리예요',                 cls:'mascot-s--good' },
+  doing:  { alt:'잘 하고 있어!',                         cls:'mascot-s--doing' },
+  fight:  { alt:'힘내! 오늘도 화이팅',                   cls:'mascot-s--fight' },
+  effort: { alt:'조금 멀어도 우리가 해낼 수 있어요!',     cls:'mascot-s--effort' },
+  tired:  { alt:'조금 힘들지만.. 곧 도착해요!',           cls:'mascot-s--tired' },
+  rest:   { alt:'잠깐 쉬고 다시 출발해요!',               cls:'mascot-s--rest' }
 };
+
+function mascotImgHTML(m, size=50){
+  return `<span class="mascot-s ${m.cls}" style="width:${size}px" role="img" aria-label="${m.alt}"></span>`;
+}
 
 // 지도 옆 마스코트 — 담은 장비 수(=오늘 다닐 곳)가 많을수록 힘내는 톤으로 바뀝니다.
 function mascotForPickCount(n){
@@ -621,10 +647,12 @@ function mascotForKm(km){
 }
 
 function updateMapMascot(){
-  const img=document.getElementById('mapMascot');
-  if(!img) return;
+  const box=document.getElementById('mapMascot');
+  if(!box) return;
   const m=mascotForPickCount(state.picked.length);
-  img.src=m.src; img.alt=m.alt; img.title=m.alt; img.hidden=false;
+  box.innerHTML=mascotImgHTML(m,56);
+  box.title=m.alt;
+  box.hidden=false;
 }
 
 function updateRouteIntro(){
@@ -632,18 +660,18 @@ function updateRouteIntro(){
   if(!box) return;
   box.innerHTML = state.picked.length
     ? ''
-    : `<div class="route-intro"><img src="${MASCOT.start.src}" alt="${MASCOT.start.alt}">
+    : `<div class="route-intro">${mascotImgHTML(MASCOT.start,44)}
         <span>운전 거리가 있는 출장, 목록에서 장비를 하나씩 담아 오늘의 경로를 계획해보세요.</span></div>`;
 }
 
 function mascotRowHTML(km){
   const m=mascotForKm(km);
-  return `<div class="route-mascot-row"><img src="${m.src}" alt="${m.alt}"><span>${m.alt}</span></div>`;
+  return `<div class="route-mascot-row">${mascotImgHTML(m,50)}<span>${m.alt}</span></div>`;
 }
 
 function restTipHTML(km){
   if(km<=120) return '';
-  return `<div class="route-rest-tip"><img src="${MASCOT.rest.src}" alt="${MASCOT.rest.alt}">
+  return `<div class="route-rest-tip">${mascotImgHTML(MASCOT.rest,38)}
     <span>왕복 ${fmtKm(km)}km, 장거리 운전입니다. 중간에 잠깐 쉬어가며 안전하게 이동하세요.</span></div>`;
 }
 
@@ -831,7 +859,7 @@ function render(){
       <b>＋ 담기</b>로 고른 출장지도 함께 핀으로 보입니다.</p>
     <div class="map-wrap">
       <div id="map"></div>
-      <img class="map-mascot" id="mapMascot" src="" alt="" hidden>
+      <div class="map-mascot" id="mapMascot" hidden></div>
     </div>
     <div class="map-fail" id="mapFail">지도를 불러오지 못했습니다. 아래 목록은 정상적으로 이용할 수 있습니다.</div>
     <div class="tools">
@@ -898,7 +926,7 @@ function renderMarine(){
   if(!state.marine.length){
     app.innerHTML=`<section><h2>해양장비 점검</h2>
       <div class="empty-guide">
-        <div class="empty-guide-mascot"><img src="${MASCOT.start.src}" alt="${MASCOT.start.alt}">
+        <div class="empty-guide-mascot">${mascotImgHTML(MASCOT.start,48)}
           <span>관측차량 데이터를 채워주시면, 오늘의 출항 경로도 함께 챙겨드릴게요.</span></div>
         <b>${state.marineLoaded?'등록된 해양장비가 없습니다.':'해양장비 자료를 읽지 못했습니다.'}</b>
         <p><code>data/marine.csv</code>를 만들고 아래 칸을 채우면 이 화면에 나타납니다.
@@ -926,7 +954,7 @@ function renderMarine(){
       <b>＋ 담기</b>로 고른 점검 대상도 함께 핀으로 보입니다.</p>
     <div class="map-wrap">
       <div id="map"></div>
-      <img class="map-mascot" id="mapMascot" src="" alt="" hidden>
+      <div class="map-mascot" id="mapMascot" hidden></div>
     </div>
     <div class="map-fail" id="mapFail">지도를 불러오지 못했습니다. 아래 목록은 정상적으로 이용할 수 있습니다.</div>
     <div class="tools">
