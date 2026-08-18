@@ -1,8 +1,13 @@
-// API key should be set via environment variable or backend proxy
-// DO NOT expose API keys in client-side code
-const KAKAO_REST_API_KEY = window.KAKAO_API_KEY || '';
-const KAKAO_ADDRESS_SEARCH_URL = 'https://dapi.kakao.com/v2/local/search/address.json';
-const KAKAO_KEYWORD_SEARCH_URL = 'https://dapi.kakao.com/v2/local/search/keyword.json';
+const loadKakaoServices = () => new Promise((resolve, reject) => {
+  if (!window.kakao?.maps?.load) {
+    reject(new Error('카카오 지도 서비스를 불러오지 못했습니다.'));
+    return;
+  }
+  window.kakao.maps.load(() => {
+    if (window.kakao?.maps?.services) resolve(window.kakao.maps.services);
+    else reject(new Error('카카오 장소 검색 서비스를 사용할 수 없습니다.'));
+  });
+});
 
 const FALLBACK_RECOMMENDATIONS = [
   {
@@ -223,48 +228,42 @@ const updateWeatherUI = (name, lat, lon) => {
   });
 };
 const fetchKakaoAddress = async (query) => {
-  if (!KAKAO_REST_API_KEY) return findLocalAddress(query);
-  const url = `${KAKAO_ADDRESS_SEARCH_URL}?query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`
-    }
-  });
+  try {
+    const services = await loadKakaoServices();
+    const geocoder = new services.Geocoder();
+    const addressResult = await new Promise(resolve => {
+      geocoder.addressSearch(query, (result, status) => {
+        resolve(status === services.Status.OK ? result[0] : null);
+      });
+    });
+    if (addressResult) return addressResult;
 
-  if (!res.ok) {
-    const err = await res.text();
-    if (res.status === 401) {
-      throw new Error('Kakao API 키가 유효하지 않습니다. config.js의 키 값과 카카오 개발자 콘솔의 플랫폼(Web) 등록 도메인을 확인하세요.');
-    }
-    if (res.status === 403 && err.includes('disabled OPEN_MAP_AND_LOCAL service')) {
-      throw new Error('Kakao 앱에서 OPEN_MAP_AND_LOCAL 서비스가 비활성화되었습니다. 카카오 개발자 콘솔에서 해당 서비스를 활성화하세요.');
-    }
-    throw new Error(`Kakao 주소 검색 오류: ${res.status} ${err}`);
+    const places = new services.Places();
+    const keywordResult = await new Promise(resolve => {
+      places.keywordSearch(query, (result, status) => {
+        resolve(status === services.Status.OK ? result[0] : null);
+      });
+    });
+    return keywordResult || findLocalAddress(query);
+  } catch (error) {
+    console.warn('카카오 주소 검색 대신 AWS 자료를 사용합니다.', error);
+    return findLocalAddress(query);
   }
-
-  const data = await res.json();
-  return data.documents?.[0] ?? null;
 };
 
 const fetchKakaoKeyword = async (keyword, x, y, radius = 2000) => {
-  if (!KAKAO_REST_API_KEY) return [];
-  const url = `${KAKAO_KEYWORD_SEARCH_URL}?query=${encodeURIComponent(keyword)}&x=${x}&y=${y}&radius=${radius}&size=10`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`
-    }
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    if (res.status === 401) {
-      throw new Error('Kakao API 키가 유효하지 않습니다. config.js의 키 값과 카카오 개발자 콘솔의 플랫폼(Web) 등록 도메인을 확인하세요.');
-    }
-    throw new Error(`Kakao 키워드 검색 오류: ${res.status} ${err}`);
+  try {
+    const services = await loadKakaoServices();
+    const places = new services.Places();
+    return await new Promise(resolve => {
+      places.keywordSearch(keyword, (result, status) => {
+        resolve(status === services.Status.OK ? result : []);
+      }, { x, y, radius, size: 10, sort: services.SortBy.DISTANCE });
+    });
+  } catch (error) {
+    console.warn('카카오 장소 검색을 건너뜁니다.', error);
+    return [];
   }
-
-  const data = await res.json();
-  return data.documents || [];
 };
 
 const placeScore = (place, keyword) => {
@@ -664,21 +663,17 @@ const loadInitialUI = async () => {
         });
       });
 
-      const awsCandidates = buildAwsStationCandidates(address.x, address.y, radius);
-      awsCandidates.forEach(candidate => {
-        if (!places.some(p => p.key === candidate.key)) {
-          places.push(candidate);
-        }
-      });
-
       places.sort((a, b) => b.score - a.score || a.distance - b.distance);
-      const topPlaces = places.slice(0, 3);
+      const kakaoPick = places.slice(0, 1);
+      const awsCandidates = buildAwsStationCandidates(address.x, address.y, radius)
+        .filter(candidate => !kakaoPick.some(place => place.key === candidate.key));
+      const topPlaces = [...kakaoPick, ...awsCandidates].slice(0, 3);
       if (!topPlaces.length) {
         renderRecommendations(fallbackRecommendations(query));
         toast('검색 결과가 부족하여 기본 추천을 표시합니다.');
       } else {
         renderRecommendations(topPlaces);
-        toast(KAKAO_REST_API_KEY ? '규칙 기반 추천 장소를 보여드립니다.' : '가까운 실제 AWS 관측소를 보여드립니다.');
+        toast(kakaoPick.length ? '카카오 추천 1곳과 가까운 AWS 관측소를 보여드립니다.' : '가까운 실제 AWS 관측소를 보여드립니다.');
       }
       bindDetailButtons();
     } catch (error) {
