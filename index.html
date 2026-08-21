@@ -194,13 +194,15 @@ header p{margin:3px 0 0;font-size:13.5px;opacity:.88}
 }
 .mascot-s--tired{background-position:0% 100%}
 .mascot-s--rest {background-position:100% 100%}
+.mascot-art{display:block;max-width:100%;height:auto;object-fit:contain;filter:drop-shadow(0 4px 10px rgba(13,47,92,.12));}
+.route-intro .mascot-art,.route-mascot-row .mascot-art,.map-mascot .mascot-art{display:block}
+.route-intro img{width:44px;height:auto;flex:0 0 auto}
+.route-mascot-row img{width:50px;height:auto;flex:0 0 auto}
 
 /* ===== ④ 경로 ===== */
 .route-intro{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.route-intro img{width:44px;height:auto;flex:0 0 auto}
 .route-intro span{font-size:13px;color:var(--muted);font-weight:600;line-height:1.4}
 .route-mascot-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.route-mascot-row img{width:50px;height:auto;flex:0 0 auto}
 .route-mascot-row span{
   font-size:12.5px;font-weight:700;color:#fff;background:rgba(255,255,255,.16);
   padding:6px 10px;border-radius:10px;line-height:1.4;
@@ -617,17 +619,17 @@ const ICON = {
 
 /* 장거리 출장 운전의 고단함을 표현한 마스코트 — img/ 폴더 스프라이트에서 잘라 표시합니다. */
 const MASCOT = {
-  start:  { alt:'출발! 장비를 하나씩 담아보세요',       cls:'mascot-s--start' },
-  good:   { alt:'좋아! 가까운 거리예요',                 cls:'mascot-s--good' },
-  doing:  { alt:'잘 하고 있어!',                         cls:'mascot-s--doing' },
-  fight:  { alt:'힘내! 오늘도 화이팅',                   cls:'mascot-s--fight' },
-  effort: { alt:'조금 멀어도 우리가 해낼 수 있어요!',     cls:'mascot-s--effort' },
-  tired:  { alt:'조금 힘들지만.. 곧 도착해요!',           cls:'mascot-s--tired' },
-  rest:   { alt:'잠깐 쉬고 다시 출발해요!',               cls:'mascot-s--rest' }
+  start:  { alt:'출발! 장비를 하나씩 담아보세요',       cls:'mascot-s--start', img:'img/7.png' },
+  good:   { alt:'좋아! 가까운 거리예요',                 cls:'mascot-s--good', img:'img/5.png' },
+  doing:  { alt:'잘 하고 있어!',                         cls:'mascot-s--doing', img:'img/1.png' },
+  fight:  { alt:'힘내! 오늘도 화이팅',                   cls:'mascot-s--fight', img:'img/6.png' },
+  effort: { alt:'조금 멀어도 우리가 해낼 수 있어요!',     cls:'mascot-s--effort', img:'img/4.png' },
+  tired:  { alt:'조금 힘들지만.. 곧 도착해요!',           cls:'mascot-s--tired', img:'img/2.png' },
+  rest:   { alt:'잠깐 쉬고 다시 출발해요!',               cls:'mascot-s--rest', img:'img/3.png' }
 };
 
 function mascotImgHTML(m, size=50){
-  return `<span class="mascot-s ${m.cls}" style="width:${size}px" role="img" aria-label="${m.alt}"></span>`;
+  return `<img class="mascot-art" src="${m.img || 'img/mascoat.png'}" style="width:${size}px;height:auto" alt="${m.alt}" />`;
 }
 
 // 지도 옆 마스코트 — 담은 장비 수(=오늘 다닐 곳)가 많을수록 힘내는 톤으로 바뀝니다.
