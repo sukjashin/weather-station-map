@@ -191,46 +191,46 @@ const getStaticMapUrl = (lng, lat, w = 520, h = 200) => {
 };
 
 const WEATHER_CODE_MAP = {
-  0: { label: '맑음', icon: 'img/5.png' },
-  1: { label: '대체로 맑음', icon: 'img/1.png' },
-  2: { label: '구름 조금', icon: 'img/4.png' },
-  3: { label: '흐림', icon: 'img/2.png' },
-  45: { label: '안개', icon: 'img/3.png' },
-  48: { label: '안개', icon: 'img/3.png' },
-  51: { label: '이슬비', icon: 'img/6.png' },
-  53: { label: '이슬비', icon: 'img/6.png' },
-  55: { label: '강한 이슬비', icon: 'img/6.png' },
-  56: { label: '동결 이슬비', icon: 'img/6.png' },
-  57: { label: '강한 동결 이슬비', icon: 'img/6.png' },
-  61: { label: '약한 비', icon: 'img/6.png' },
-  63: { label: '비', icon: 'img/6.png' },
-  65: { label: '강한 비', icon: 'img/6.png' },
-  66: { label: '약한 진눈깨비', icon: 'img/6.png' },
-  67: { label: '강한 진눈깨비', icon: 'img/6.png' },
-  71: { label: '약한 눈', icon: 'img/7.png' },
-  73: { label: '눈', icon: 'img/7.png' },
-  75: { label: '강한 눈', icon: 'img/7.png' },
-  77: { label: '눈송이', icon: 'img/7.png' },
-  80: { label: '소나기', icon: 'img/6.png' },
-  81: { label: '강한 소나기', icon: 'img/6.png' },
-  82: { label: '집중호우', icon: 'img/3.png' },
-  85: { label: '눈 보슬', icon: 'img/7.png' },
-  86: { label: '강한 눈보라', icon: 'img/7.png' },
-  95: { label: '뇌우', icon: 'img/3.png' },
-  96: { label: '뇌우(우박)', icon: 'img/3.png' },
-  99: { label: '강한 뇌우', icon: 'img/3.png' }
+  0: { label: '맑음', icon: '../img/5.png' },
+  1: { label: '대체로 맑음', icon: '../img/1.png' },
+  2: { label: '구름 조금', icon: '../img/4.png' },
+  3: { label: '흐림', icon: '../img/2.png' },
+  45: { label: '안개', icon: '../img/3.png' },
+  48: { label: '안개', icon: '../img/3.png' },
+  51: { label: '이슬비', icon: '../img/6.png' },
+  53: { label: '이슬비', icon: '../img/6.png' },
+  55: { label: '강한 이슬비', icon: '../img/6.png' },
+  56: { label: '동결 이슬비', icon: '../img/6.png' },
+  57: { label: '강한 동결 이슬비', icon: '../img/6.png' },
+  61: { label: '약한 비', icon: '../img/6.png' },
+  63: { label: '비', icon: '../img/6.png' },
+  65: { label: '강한 비', icon: '../img/6.png' },
+  66: { label: '약한 진눈깨비', icon: '../img/6.png' },
+  67: { label: '강한 진눈깨비', icon: '../img/6.png' },
+  71: { label: '약한 눈', icon: '../img/7.png' },
+  73: { label: '눈', icon: '../img/7.png' },
+  75: { label: '강한 눈', icon: '../img/7.png' },
+  77: { label: '눈송이', icon: '../img/7.png' },
+  80: { label: '소나기', icon: '../img/6.png' },
+  81: { label: '강한 소나기', icon: '../img/6.png' },
+  82: { label: '집중호우', icon: '../img/3.png' },
+  85: { label: '눈 보슬', icon: '../img/7.png' },
+  86: { label: '강한 눈보라', icon: '../img/7.png' },
+  95: { label: '뇌우', icon: '../img/3.png' },
+  96: { label: '뇌우(우박)', icon: '../img/3.png' },
+  99: { label: '강한 뇌우', icon: '../img/3.png' }
 };
 
 const getWeatherInfo = (temp, weatherCode) => {
   if (typeof temp === 'number') {
-    if (temp >= 33) return { label: '폭염', icon: 'img/2.png' };
-    if (temp >= 28) return { label: '더운 날', icon: 'img/1.png' };
-    if (temp >= 20) return { label: '쾌적', icon: 'img/5.png' };
-    if (temp >= 10) return { label: '선선', icon: 'img/4.png' };
-    if (temp >= 0) return { label: '쌀쌀', icon: 'img/7.png' };
+    if (temp >= 33) return { label: '폭염', icon: '../img/2.png' };
+    if (temp >= 28) return { label: '더운 날', icon: '../img/1.png' };
+    if (temp >= 20) return { label: '쾌적', icon: '../img/5.png' };
+    if (temp >= 10) return { label: '선선', icon: '../img/4.png' };
+    if (temp >= 0) return { label: '쌀쌀', icon: '../img/7.png' };
   }
 
-  const meta = WEATHER_CODE_MAP[weatherCode] || { label: '날씨 정보', icon: 'img/1.png' };
+  const meta = WEATHER_CODE_MAP[weatherCode] || { label: '날씨 정보', icon: '../img/1.png' };
   return meta;
 };
 
@@ -265,9 +265,9 @@ const updateWeatherUI = (name, lat, lon) => {
     const weather = getWeatherInfo(typeof temp === 'number' ? temp : null, weatherCode);
     const wbgtApprox = (typeof temp === 'number' && typeof humidity === 'number') ? ((temp * 0.7) + (humidity * 0.2)) : null;
     const wbgtLabel = wbgtApprox >= 31 ? '위험' : '주의';
-    const wbgtIcon = wbgtApprox >= 31 ? 'img/2.png' : wbgtApprox >= 28 ? 'img/1.png' : 'img/5.png';
+    const wbgtIcon = wbgtApprox >= 31 ? '../img/2.png' : wbgtApprox >= 28 ? '../img/1.png' : '../img/5.png';
     const alertText = typeof temp === 'number' && temp >= 33 ? '폭염주의' : '해당없음';
-    const alertIcon = typeof temp === 'number' && temp >= 33 ? 'img/2.png' : typeof temp === 'number' && temp >= 30 ? 'img/1.png' : 'img/5.png';
+    const alertIcon = typeof temp === 'number' && temp >= 33 ? '../img/2.png' : typeof temp === 'number' && temp >= 30 ? '../img/1.png' : '../img/5.png';
 
     grid.innerHTML = `
       <div class="weather-card">
@@ -290,7 +290,7 @@ const updateWeatherUI = (name, lat, lon) => {
       </div>
       <div class="weather-card">
         <div class="weather-card-top"><span>일출/일몰</span><span class="weather-state" style="background:#fefce8;color:#a16207">오늘</span></div>
-        <div class="weather-icon" aria-label="일출과 일몰"><img src="img/7.png" alt="일출/일몰" /></div>
+        <div class="weather-icon" aria-label="일출과 일몰"><img src="../img/7.png" alt="일출/일몰" /></div>
         <b style="font-size:18px">05:22 / 19:42</b>
         <span class="weather-meta">일출 · 일몰</span>
       </div>
