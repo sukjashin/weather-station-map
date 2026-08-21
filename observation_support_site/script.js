@@ -190,6 +190,50 @@ const getStaticMapUrl = (lng, lat, w = 520, h = 200) => {
   return `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}&z=17&size=${Math.min(650,w)},${h}&l=sat&lang=ko_RU`;
 };
 
+const WEATHER_CODE_MAP = {
+  0: { label: '맑음', icon: '☀️' },
+  1: { label: '대체로 맑음', icon: '🌤️' },
+  2: { label: '구름 조금', icon: '⛅' },
+  3: { label: '흐림', icon: '☁️' },
+  45: { label: '안개', icon: '🌫️' },
+  48: { label: '안개', icon: '🌫️' },
+  51: { label: '이슬비', icon: '🌦️' },
+  53: { label: '이슬비', icon: '🌦️' },
+  55: { label: '강한 이슬비', icon: '🌧️' },
+  56: { label: '동결 이슬비', icon: '🌧️' },
+  57: { label: '강한 동결 이슬비', icon: '🌧️' },
+  61: { label: '약한 비', icon: '🌦️' },
+  63: { label: '비', icon: '🌧️' },
+  65: { label: '강한 비', icon: '🌧️' },
+  66: { label: '약한 진눈깨비', icon: '🌧️' },
+  67: { label: '강한 진눈깨비', icon: '🌧️' },
+  71: { label: '약한 눈', icon: '🌨️' },
+  73: { label: '눈', icon: '❄️' },
+  75: { label: '강한 눈', icon: '🌨️' },
+  77: { label: '눈송이', icon: '❄️' },
+  80: { label: '소나기', icon: '🌦️' },
+  81: { label: '강한 소나기', icon: '🌧️' },
+  82: { label: '집중호우', icon: '⛈️' },
+  85: { label: '눈 보슬', icon: '🌨️' },
+  86: { label: '강한 눈보라', icon: '🌨️' },
+  95: { label: '뇌우', icon: '⛈️' },
+  96: { label: '뇌우(우박)', icon: '⛈️' },
+  99: { label: '강한 뇌우', icon: '⛈️' }
+};
+
+const getWeatherInfo = (temp, weatherCode) => {
+  if (typeof temp === 'number') {
+    if (temp >= 33) return { label: '폭염', icon: '🥵' };
+    if (temp >= 28) return { label: '더운 날', icon: '🌤️' };
+    if (temp >= 20) return { label: '쾌적', icon: '☀️' };
+    if (temp >= 10) return { label: '선선', icon: '🌤️' };
+    if (temp >= 0) return { label: '쌀쌀', icon: '⛅' };
+  }
+
+  const meta = WEATHER_CODE_MAP[weatherCode] || { label: '날씨 정보', icon: '🌤️' };
+  return meta;
+};
+
 const fetchWeather = async (lat, lon) => {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relativehumidity_2m&timezone=Asia%2FSeoul`;
@@ -198,12 +242,13 @@ const fetchWeather = async (lat, lon) => {
     const data = await res.json();
     const temp = data.current_weather?.temperature;
     const time = data.current_weather?.time;
+    const weatherCode = data.current_weather?.weathercode;
     let humidity = null;
     if (data.hourly && data.hourly.time && data.hourly.relativehumidity_2m) {
       const idx = data.hourly.time.indexOf(time);
       if (idx >= 0) humidity = data.hourly.relativehumidity_2m[idx];
     }
-    return { temp, humidity, raw: data };
+    return { temp, humidity, weatherCode, raw: data };
   } catch (e) {
     console.error('weather fetch error', e);
     return null;
@@ -216,12 +261,39 @@ const updateWeatherUI = (name, lat, lon) => {
   fetchWeather(lat, lon).then(result => {
     const temp = result?.temp ?? '정보 없음';
     const humidity = result?.humidity ?? '정보 없음';
-    const wbgtApprox = (typeof temp === 'number' && typeof humidity === 'number') ? ( (temp * 0.7) + (humidity * 0.2) ) : null;
+    const weatherCode = result?.weatherCode ?? null;
+    const weather = getWeatherInfo(typeof temp === 'number' ? temp : null, weatherCode);
+    const wbgtApprox = (typeof temp === 'number' && typeof humidity === 'number') ? ((temp * 0.7) + (humidity * 0.2)) : null;
+    const wbgtLabel = wbgtApprox >= 31 ? '위험' : '주의';
+    const wbgtIcon = wbgtApprox >= 31 ? '🥵' : wbgtApprox >= 28 ? '🌡️' : '✅';
+    const alertText = typeof temp === 'number' && temp >= 33 ? '폭염주의' : '해당없음';
+    const alertIcon = typeof temp === 'number' && temp >= 33 ? '🚨' : typeof temp === 'number' && temp >= 30 ? '⚠️' : '✅';
+
     grid.innerHTML = `
-      <div class="weather-card">현재 날씨 (${name})<b>☀️ ${temp}℃</b><span style="color:var(--muted);font-size:12px">체감/습도 ${humidity}%</span></div>
-      <div class="weather-card">WBGT <span style="color:#d97706">${wbgtApprox ? '(예측)' : ''}</span><b>🌡️ ${wbgtApprox ? wbgtApprox.toFixed(1) + '℃' : '정보 없음'}</b><span class="badge">${wbgtApprox && wbgtApprox>=31? '위험':'주의'}</span></div>
-      <div class="weather-card">폭염특보<b style="color:var(--danger)">${(temp>=33)? '폭염주의' : '해당없음'}</b><span style="font-size:12px;color:var(--muted)">${new Date().toLocaleString()}</span></div>
-      <div class="weather-card">일출/일몰<b style="font-size:18px">05:22 / 19:42</b></div>
+      <div class="weather-card">
+        <div class="weather-card-top"><span>현재 날씨</span><span class="weather-state">${weather.label}</span></div>
+        <div class="weather-icon" aria-label="${weather.label}">${weather.icon}</div>
+        <b>${typeof temp === 'number' ? temp.toFixed(1) + '℃' : '정보 없음'}</b>
+        <span class="weather-meta"><strong>체감</strong> ${typeof temp === 'number' ? (temp + 1.5).toFixed(1) + '℃' : '정보 없음'} · <strong>습도</strong> ${humidity}%</span>
+      </div>
+      <div class="weather-card">
+        <div class="weather-card-top"><span>WBGT</span><span class="weather-state" style="background:#fff7ed;color:#d97706">${wbgtLabel}</span></div>
+        <div class="weather-icon" aria-label="WBGT">${wbgtIcon}</div>
+        <b>${wbgtApprox ? wbgtApprox.toFixed(1) + '℃' : '정보 없음'}</b>
+        <span class="weather-meta">${wbgtApprox && wbgtApprox >= 31 ? '위험 수준' : '주의 수준'}</span>
+      </div>
+      <div class="weather-card">
+        <div class="weather-card-top"><span>폭염특보</span><span class="weather-state" style="background:${alertText === '폭염주의' ? '#fef2f2' : '#ecfdf5'};color:${alertText === '폭염주의' ? 'var(--danger)' : '#15803d'}">${alertText === '폭염주의' ? '주의' : '양호'}</span></div>
+        <div class="weather-icon" aria-label="${alertText}">${alertIcon}</div>
+        <b style="color:${alertText === '폭염주의' ? 'var(--danger)' : '#15803d'}">${alertText}</b>
+        <span class="weather-meta">${new Date().toLocaleString()}</span>
+      </div>
+      <div class="weather-card">
+        <div class="weather-card-top"><span>일출/일몰</span><span class="weather-state" style="background:#fefce8;color:#a16207">오늘</span></div>
+        <div class="weather-icon" aria-label="일출과 일몰">🌅</div>
+        <b style="font-size:18px">05:22 / 19:42</b>
+        <span class="weather-meta">일출 · 일몰</span>
+      </div>
     `;
   }).catch(() => {
     // leave existing content if weather fetch fails
