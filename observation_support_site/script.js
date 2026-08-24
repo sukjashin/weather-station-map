@@ -122,6 +122,14 @@ const createPinIcon = ({ size = 40, fill = '#0d3b82' } = {}) => {
   });
 };
 
+const createSelectedPlaceIcon = () => L.icon({
+  iconUrl: '../img/flag.png',
+  iconSize: [58, 70],
+  iconAnchor: [29, 66],
+  popupAnchor: [0, -64],
+  className: 'selected-place-flag'
+});
+
 const initMap = () => {
   map = L.map('leafletMap', {
     zoomControl: false,
@@ -133,7 +141,6 @@ const initMap = () => {
     subdomains: ['mt0','mt1','mt2','mt3']
   }).addTo(map);
 
-  mapMarker = L.marker([35.1595, 126.8526], { icon: createPinIcon() }).addTo(map).bindPopup('광주 기본 위치').openPopup();
   setTimeout(() => {
     if (map) map.invalidateSize();
   }, 150);
@@ -147,7 +154,7 @@ const updateMap = (x, y, label = '선택 위치') => {
   if (mapMarker) {
     mapMarker.setLatLng([lat, lng]).setPopupContent(label).openPopup();
   } else {
-    mapMarker = L.marker([lat, lng], { icon: createPinIcon() }).addTo(map).bindPopup(label).openPopup();
+    mapMarker = L.marker([lat, lng], { icon: createSelectedPlaceIcon() }).addTo(map).bindPopup(label).openPopup();
   }
 };
 
@@ -191,47 +198,29 @@ const getStaticMapUrl = (lng, lat, w = 520, h = 200) => {
 };
 
 const WEATHER_CODE_MAP = {
-  0: { label: '맑음', icon: '../img/5.png' },
-  1: { label: '대체로 맑음', icon: '../img/1.png' },
-  2: { label: '구름 조금', icon: '../img/4.png' },
-  3: { label: '흐림', icon: '../img/2.png' },
-  45: { label: '안개', icon: '../img/3.png' },
-  48: { label: '안개', icon: '../img/3.png' },
-  51: { label: '이슬비', icon: '../img/6.png' },
-  53: { label: '이슬비', icon: '../img/6.png' },
-  55: { label: '강한 이슬비', icon: '../img/6.png' },
-  56: { label: '동결 이슬비', icon: '../img/6.png' },
-  57: { label: '강한 동결 이슬비', icon: '../img/6.png' },
-  61: { label: '약한 비', icon: '../img/6.png' },
-  63: { label: '비', icon: '../img/6.png' },
-  65: { label: '강한 비', icon: '../img/6.png' },
-  66: { label: '약한 진눈깨비', icon: '../img/6.png' },
-  67: { label: '강한 진눈깨비', icon: '../img/6.png' },
-  71: { label: '약한 눈', icon: '../img/7.png' },
-  73: { label: '눈', icon: '../img/7.png' },
-  75: { label: '강한 눈', icon: '../img/7.png' },
-  77: { label: '눈송이', icon: '../img/7.png' },
-  80: { label: '소나기', icon: '../img/6.png' },
-  81: { label: '강한 소나기', icon: '../img/6.png' },
-  82: { label: '집중호우', icon: '../img/3.png' },
-  85: { label: '눈 보슬', icon: '../img/7.png' },
-  86: { label: '강한 눈보라', icon: '../img/7.png' },
-  95: { label: '뇌우', icon: '../img/3.png' },
-  96: { label: '뇌우(우박)', icon: '../img/3.png' },
-  99: { label: '강한 뇌우', icon: '../img/3.png' }
+  0: { label: '맑음', symbol: '☀️' },
+  1: { label: '대체로 맑음', symbol: '🌤️' },
+  2: { label: '구름 조금', symbol: '⛅' },
+  3: { label: '흐림', symbol: '☁️' },
+  45: { label: '안개', symbol: '🌫️' }, 48: { label: '안개', symbol: '🌫️' },
+  51: { label: '이슬비', symbol: '🌦️' }, 53: { label: '이슬비', symbol: '🌦️' },
+  55: { label: '강한 이슬비', symbol: '🌧️' }, 56: { label: '동결 이슬비', symbol: '🌧️' }, 57: { label: '강한 동결 이슬비', symbol: '🌧️' },
+  61: { label: '약한 비', symbol: '🌦️' }, 63: { label: '비', symbol: '🌧️' }, 65: { label: '강한 비', symbol: '🌧️' },
+  66: { label: '약한 진눈깨비', symbol: '🌨️' }, 67: { label: '강한 진눈깨비', symbol: '🌨️' },
+  71: { label: '약한 눈', symbol: '🌨️' }, 73: { label: '눈', symbol: '❄️' }, 75: { label: '강한 눈', symbol: '❄️' }, 77: { label: '눈송이', symbol: '❄️' },
+  80: { label: '소나기', symbol: '🌦️' }, 81: { label: '강한 소나기', symbol: '🌧️' }, 82: { label: '집중호우', symbol: '⛈️' },
+  85: { label: '눈 보슬', symbol: '🌨️' }, 86: { label: '강한 눈보라', symbol: '🌨️' },
+  95: { label: '뇌우', symbol: '⛈️' }, 96: { label: '뇌우(우박)', symbol: '⛈️' }, 99: { label: '강한 뇌우', symbol: '⛈️' }
 };
 
 const getWeatherInfo = (temp, weatherCode) => {
+  const coded = WEATHER_CODE_MAP[weatherCode];
+  if (coded && weatherCode !== 0 && weatherCode !== 1) return coded;
   if (typeof temp === 'number') {
-    if (temp >= 33) return { label: '폭염', icon: '../img/2.png' };
-    if (temp >= 28) return { label: '더운 날', icon: '../img/1.png' };
-    if (temp >= 20) return { label: '쾌적', icon: '../img/5.png' };
-    if (temp >= 10) return { label: '선선', icon: '../img/4.png' };
-    if (temp >= 0) return { label: '쌀쌀', icon: '../img/7.png' };
+    if (temp >= 33) return { label: '폭염', symbol: '🌡️' };
+    if (temp >= 28) return { label: '더운 날', symbol: '☀️' };
   }
-
-  const meta = WEATHER_CODE_MAP[weatherCode] || { label: '날씨 정보', icon: '../img/1.png' };
-  return meta;
+  return coded || { label: '날씨 정보', symbol: '🌤️' };
 };
 
 const fetchWeather = async (lat, lon) => {
@@ -265,32 +254,30 @@ const updateWeatherUI = (name, lat, lon) => {
     const weather = getWeatherInfo(typeof temp === 'number' ? temp : null, weatherCode);
     const wbgtApprox = (typeof temp === 'number' && typeof humidity === 'number') ? ((temp * 0.7) + (humidity * 0.2)) : null;
     const wbgtLabel = wbgtApprox >= 31 ? '위험' : '주의';
-    const wbgtIcon = wbgtApprox >= 31 ? '../img/2.png' : wbgtApprox >= 28 ? '../img/1.png' : '../img/5.png';
     const alertText = typeof temp === 'number' && temp >= 33 ? '폭염주의' : '해당없음';
-    const alertIcon = typeof temp === 'number' && temp >= 33 ? '../img/2.png' : typeof temp === 'number' && temp >= 30 ? '../img/1.png' : '../img/5.png';
 
     grid.innerHTML = `
       <div class="weather-card">
         <div class="weather-card-top"><span>현재 날씨</span><span class="weather-state">${weather.label}</span></div>
-        <div class="weather-icon" aria-label="${weather.label}"><img src="${weather.icon}" alt="${weather.label}" /></div>
+        <div class="weather-icon weather-symbol" role="img" aria-label="${weather.label}">${weather.symbol}</div>
         <b>${typeof temp === 'number' ? temp.toFixed(1) + '℃' : '정보 없음'}</b>
         <span class="weather-meta"><strong>체감</strong> ${typeof temp === 'number' ? (temp + 1.5).toFixed(1) + '℃' : '정보 없음'} · <strong>습도</strong> ${humidity}%</span>
       </div>
       <div class="weather-card">
         <div class="weather-card-top"><span>WBGT</span><span class="weather-state" style="background:#fff7ed;color:#d97706">${wbgtLabel}</span></div>
-        <div class="weather-icon" aria-label="WBGT"><img src="${wbgtIcon}" alt="WBGT" /></div>
+        <div class="weather-icon weather-symbol" role="img" aria-label="WBGT">🌡️</div>
         <b>${wbgtApprox ? wbgtApprox.toFixed(1) + '℃' : '정보 없음'}</b>
         <span class="weather-meta">${wbgtApprox && wbgtApprox >= 31 ? '위험 수준' : '주의 수준'}</span>
       </div>
       <div class="weather-card">
         <div class="weather-card-top"><span>폭염특보</span><span class="weather-state" style="background:${alertText === '폭염주의' ? '#fef2f2' : '#ecfdf5'};color:${alertText === '폭염주의' ? 'var(--danger)' : '#15803d'}">${alertText === '폭염주의' ? '주의' : '양호'}</span></div>
-        <div class="weather-icon" aria-label="${alertText}"><img src="${alertIcon}" alt="${alertText}" /></div>
+        <div class="weather-icon weather-symbol" role="img" aria-label="${alertText}">${alertText === '폭염주의' ? '⚠️' : '✅'}</div>
         <b style="color:${alertText === '폭염주의' ? 'var(--danger)' : '#15803d'}">${alertText}</b>
         <span class="weather-meta">${new Date().toLocaleString()}</span>
       </div>
       <div class="weather-card">
         <div class="weather-card-top"><span>일출/일몰</span><span class="weather-state" style="background:#fefce8;color:#a16207">오늘</span></div>
-        <div class="weather-icon" aria-label="일출과 일몰"><img src="../img/7.png" alt="일출/일몰" /></div>
+        <div class="weather-icon weather-symbol" role="img" aria-label="일출과 일몰">🌅</div>
         <b style="font-size:18px">05:22 / 19:42</b>
         <span class="weather-meta">일출 · 일몰</span>
       </div>
@@ -536,6 +523,10 @@ const clearPlaceMarkers = () => {
     try { map.removeLayer(m); } catch (e) {}
   });
   placeMarkers = {};
+  if (mapMarker) {
+    try { map.removeLayer(mapMarker); } catch (e) {}
+    mapMarker = null;
+  }
 };
 
 const selectPlace = (place, zoom = 17) => {
@@ -543,10 +534,8 @@ const selectPlace = (place, zoom = 17) => {
   const lng = parseFloat(place.x || place.lng || lastAddress.x);
   const name = place.place_name || place.name || place;
   if (!map || isNaN(lat) || isNaN(lng)) return;
-  map.setView([lat, lng], zoom);
-  const marker = placeMarkers[name];
-  if (marker) marker.openPopup();
-  else if (mapMarker) mapMarker.setLatLng([lat, lng]).setPopupContent(name).openPopup();
+  updateMap(lng, lat, name);
+  map.setZoom(zoom);
   document.getElementById('selectedPlace').textContent = `(${name})`;
   updateWeatherUI(name, lat, lng);
 };
@@ -589,20 +578,6 @@ const renderRecommendations = (places) => {
   currentPlaces = places;
   clearPlaceMarkers();
   places.forEach((place, index) => {
-    const lat = parseFloat(place.y || lastAddress.y);
-    const lng = parseFloat(place.x || lastAddress.x);
-    const name = place.place_name;
-    if (!isNaN(lat) && !isNaN(lng) && map) {
-      try {
-        const marker = L.marker([lat, lng], { icon: createPinIcon({ size: 34, fill: '#1f6fe5' }) }).addTo(map).bindPopup(`<b>${name}</b><br>${place.address_name || ''}`);
-        placeMarkers[name] = marker;
-        marker.on('click', () => {
-          document.getElementById('selectedPlace').textContent = `(${name})`;
-          updateWeatherUI(name, lat, lng);
-          updateDetailPanel(place);
-        });
-      } catch (e) { console.error(e); }
-    }
     // attach card click to select place (exclude detail button clicks)
     const card = container.querySelectorAll('.rec-card')[index];
     if (card) {
@@ -642,7 +617,8 @@ const updateAddressResult = (address) => {
   document.getElementById('addressText').dataset.x = address.x;
   document.getElementById('addressText').dataset.y = address.y;
   lastAddress = { x: address.x, y: address.y, address_name: text };
-  updateMap(address.x, address.y, text);
+  clearPlaceMarkers();
+  if (map) map.setView([Number(address.y), Number(address.x)], 15);
 };
 
 const bindDetailButtons = () => {
