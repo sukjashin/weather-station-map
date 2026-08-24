@@ -486,6 +486,50 @@ const fallbackRecommendations = (query) => {
   ];
 };
 
+// 추천 결과는 출처별로 한 곳씩 구성합니다.
+// - CSV 추천: stations.csv에서 검색 중심과 가장 가까운 관측소
+// - AI 추천: 편의시설·거리·AWS 인접성을 자체 점수로 재평가한 장소
+// - 카카오 추천: 카카오 장소 검색 결과 중 검색 중심과 가장 가까운 장소
+const buildRecommendationMix = (address, kakaoPlaces, query) => {
+  const csvPick = buildAwsStationCandidates(address.x, address.y, Number.POSITIVE_INFINITY)[0];
+  const ranked = [...kakaoPlaces].sort((a, b) => b.score - a.score || Number(a.distance) - Number(b.distance));
+  const aiPick = ranked[0];
+  const kakaoPick = [...kakaoPlaces]
+    .filter(place => !aiPick || place.key !== aiPick.key)
+    .sort((a, b) => Number(a.distance) - Number(b.distance))[0] || ranked[1];
+  const fallback = fallbackRecommendations(query);
+
+  return [
+    csvPick ? {
+      ...csvPick,
+      source: 'csv',
+      sourceLabel: 'CSV 추천',
+      summary: `${csvPick.summary} · stations.csv 거리 기준`
+    } : {
+      ...fallback[0], source: 'csv', sourceLabel: 'CSV 추천',
+      summary: 'CSV 자료를 불러오지 못해 기본 후보를 표시합니다.'
+    },
+    aiPick ? {
+      ...aiPick,
+      source: 'ai',
+      sourceLabel: 'AI 추천',
+      summary: `${aiPick.summary} · 거리와 편의시설, AWS 인접성을 종합 분석`
+    } : {
+      ...fallback[1], source: 'ai', sourceLabel: 'AI 추천',
+      summary: '검색 조건을 바탕으로 자체 분석한 대체 추천입니다.'
+    },
+    kakaoPick ? {
+      ...kakaoPick,
+      source: 'kakao',
+      sourceLabel: '카카오 추천',
+      summary: `${kakaoPick.summary} · 카카오 검색 거리 기준`
+    } : {
+      ...fallback[2], source: 'kakao', sourceLabel: '카카오 추천',
+      summary: '카카오 검색 결과가 없어 기본 후보를 표시합니다.'
+    }
+  ];
+};
+
 const clearPlaceMarkers = () => {
   if (!map) return;
   Object.values(placeMarkers).forEach(m => {
@@ -522,6 +566,7 @@ const renderRecommendations = (places) => {
     return `
       <article class="rec-card">
         <div class="rank">${index + 1}</div>
+        <div class="rec-source rec-source-${place.source || 'default'}">${place.sourceLabel || '종합 추천'}</div>
         <div class="rec-title">${place.place_name}</div>
         <div class="rec-address">📍 ${place.address_name || place.road_address_name || '주소 정보 없음'}</div>
         <div class="hero-row">
@@ -703,7 +748,7 @@ const loadInitialUI = async () => {
       if (!address) {
         document.getElementById('addressText').textContent = '주소 검색 결과가 없습니다.';
         toast('주소 검색 결과가 없습니다. 주소를 확인하세요.');
-        renderRecommendations(fallbackRecommendations(query));
+        renderRecommendations(buildRecommendationMix(lastAddress, [], query));
         bindDetailButtons();
         updateHeaderSub(`${query} 기준 검색 반경 ${radius >= 1000 ? (radius/1000)+'km' : radius+'m'}`);
         return;
@@ -735,24 +780,15 @@ const loadInitialUI = async () => {
         });
       });
 
-      places.sort((a, b) => b.score - a.score || a.distance - b.distance);
-      const kakaoPick = places.slice(0, 1);
-      const awsCandidates = buildAwsStationCandidates(address.x, address.y, radius)
-        .filter(candidate => !kakaoPick.some(place => place.key === candidate.key));
-      const topPlaces = [...kakaoPick, ...awsCandidates].slice(0, 3);
-      if (!topPlaces.length) {
-        renderRecommendations(fallbackRecommendations(query));
-        toast('검색 결과가 부족하여 기본 추천을 표시합니다.');
-      } else {
-        renderRecommendations(topPlaces);
-        toast(kakaoPick.length ? '카카오 추천 1곳과 가까운 AWS 관측소를 보여드립니다.' : '가까운 실제 AWS 관측소를 보여드립니다.');
-      }
+      const topPlaces = buildRecommendationMix(address, places, query);
+      renderRecommendations(topPlaces);
+      toast('CSV·AI·카카오 추천을 한 곳씩 보여드립니다.');
       bindDetailButtons();
     } catch (error) {
       document.getElementById('addressText').textContent = '추천 검색 중 오류가 발생했습니다.';
       toast(error.message + ' 기본 추천을 보여드립니다.');
       console.error(error);
-      renderRecommendations(fallbackRecommendations(query));
+      renderRecommendations(buildRecommendationMix(lastAddress, [], query));
       bindDetailButtons();
     }
   });
@@ -795,12 +831,14 @@ const loadInitialUI = async () => {
 
   initMap();
   const defaultQuery = '광주광역시';
-  const defaultPlaces = buildAwsStationCandidates(lastAddress.x, lastAddress.y, getSearchRadius());
-  renderRecommendations(defaultPlaces.length ? defaultPlaces : fallbackRecommendations(defaultQuery));
+  const defaultPlaces = buildRecommendationMix(lastAddress, [], defaultQuery);
+  renderRecommendations(defaultPlaces);
   bindDetailButtons();
   const initRadius = getSearchRadius();
   updateHeaderSub(`${defaultQuery} 기준 검색 반경 ${initRadius >= 1000 ? (initRadius/1000)+'km' : initRadius+'m'}`);
   restoreSavedMemo();
+  // 첫 화면에서도 실제 카카오 후보를 포함한 3가지 출처 추천을 준비합니다.
+  document.getElementById('recommendBtn').click();
 };
 
 loadInitialUI();
