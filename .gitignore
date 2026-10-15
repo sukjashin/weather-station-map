@@ -8,3 +8,6 @@
 .vscode/
 .idea/
 observation_support_site/.env
+
+# Kakao REST API 키 (개인 키, 깃에 올리지 않음)
+observation_support_site/config.js
