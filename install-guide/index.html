@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>앱 설치 방법 · AWS관리 / 관측출장</title>
+<meta name="description" content="광주·전남 AWS관리와 관측출장을 휴대폰 홈 화면에 앱으로 설치하는 방법 (안드로이드·아이폰)">
+<meta name="theme-color" content="#0d2f5c">
+<meta property="og:title" content="앱 설치 방법 · AWS관리 / 관측출장">
+<meta property="og:description" content="안드로이드·아이폰 홈 화면에 앱으로 설치하는 방법을 단계별로 안내합니다.">
+<meta property="og:image" content="https://sukjashin.github.io/weather-station-map/install-guide/mascot.png">
+<link rel="icon" type="image/png" href="icon-aws.png">
+<style>
+:root{
+  --navy:#0d2f5c; --blue:#1f6fe5; --ink:#1e293b; --muted:#64748b; --line:#e2e8f0;
+  --bg:#f4f8fd; --card:#fff; --green:#2ea062; --dark:#282c34; --yel:#ffc414;
+  --radius:20px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--ink);line-height:1.6;word-break:keep-all;overflow-wrap:break-word;
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+  padding-bottom:calc(32px + env(safe-area-inset-bottom));
+}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px}
+
+/* 머리말 */
+.hero{
+  background:linear-gradient(165deg,#1858be,#0b2862);color:#fff;
+  padding:calc(28px + env(safe-area-inset-top)) 0 26px;
+}
+.hero .wrap{position:relative}
+.hero h1{margin:0 90px 6px 0;font-size:clamp(24px,6.4vw,34px);letter-spacing:-.5px;line-height:1.25}
+.hero p{margin:0 90px 18px 0;color:#c8e1ff;font-size:clamp(14px,3.8vw,17px)}
+.hero img.mascot{position:absolute;right:16px;top:-2px;width:clamp(64px,18vw,96px);height:auto}
+.apps{display:grid;gap:10px}
+@media(min-width:560px){.apps{grid-template-columns:1fr 1fr}}
+.app{background:#fff;color:var(--ink);border-radius:16px;padding:12px;display:grid;grid-template-columns:52px 1fr;gap:12px;align-items:center}
+.app img{width:52px;height:52px;border-radius:12px}
+.app b{display:block;font-size:17px;color:var(--navy);line-height:1.2}
+.app small{display:block;color:var(--muted);font-size:12.5px}
+.app .url{grid-column:1/-1;display:flex;gap:8px;align-items:center}
+.app code{flex:1;min-width:0;background:#eef3fa;border-radius:10px;padding:8px 10px;font-size:12px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn{border:0;border-radius:10px;padding:8px 12px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn.copy{background:var(--blue);color:#fff}
+.btn.open{background:#e6f0ff;color:var(--blue);text-decoration:none;display:inline-block}
+
+/* 카카오톡 안내 */
+.notice{margin:16px 0 0;background:#fff7e0;border:1.5px solid #ffd666;border-radius:14px;padding:12px 14px;font-size:14px;color:#6b4a00}
+.notice b{color:#8a5a00}
+.notice.alert{background:#ffe8e6;border-color:#ff9a8f;color:#8a1c10;display:none}
+.notice.alert.show{display:block}
+
+/* 탭 */
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#e3ebf6;padding:5px;border-radius:16px;margin:20px 0 14px;position:sticky;top:8px;z-index:5;box-shadow:0 4px 14px rgba(13,47,92,.12)}
+.tab{border:0;background:transparent;border-radius:12px;padding:12px 6px;font:inherit;font-size:clamp(15px,4.2vw,17px);font-weight:800;color:#51627a;cursor:pointer}
+.tab[aria-selected="true"]{color:#fff}
+.tab[data-os="android"][aria-selected="true"]{background:var(--green)}
+.tab[data-os="ios"][aria-selected="true"]{background:var(--dark)}
+.tab small{display:block;font-size:11.5px;font-weight:600;opacity:.85}
+
+/* 단계 카드 */
+.panel[hidden]{display:none}
+.panel .lead{margin:0 0 12px;font-size:15px;color:var(--muted)}
+.steps{display:grid;gap:14px;padding:0;margin:0;list-style:none}
+.step{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;display:grid;gap:12px}
+.step .head{display:flex;gap:12px;align-items:flex-start}
+.num{flex:0 0 38px;height:38px;border-radius:50%;color:#fff;font-weight:800;font-size:19px;display:grid;place-items:center;margin-top:1px}
+#android .num{background:var(--green)} #ios .num{background:var(--dark)}
+.step h3{margin:0;font-size:clamp(17px,4.6vw,20px);line-height:1.35;letter-spacing:-.3px}
+.step p{margin:4px 0 0;color:var(--muted);font-size:clamp(14px,3.9vw,15.5px)}
+.step img{width:100%;height:auto;display:block;border-radius:14px}
+@media(min-width:640px){
+  .step{grid-template-columns:1fr 300px;align-items:center}
+  .step img{order:2}
+}
+
+/* 마무리 */
+.done{margin-top:22px;background:var(--navy);color:#fff;border-radius:var(--radius);padding:20px 18px}
+.done h2{margin:0 0 6px;font-size:clamp(20px,5.4vw,24px)}
+.done p{margin:0 0 6px;color:#cfe3ff;font-size:14.5px}
+.done .tip{margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2)}
+.done .tip b{color:var(--yel)}
+.icons{display:flex;gap:18px;margin:14px 0 4px}
+.icons figure{margin:0;text-align:center;font-size:12.5px;font-weight:700}
+.icons img{width:64px;height:64px;border-radius:15px;display:block;margin:0 auto 4px}
+footer{margin-top:18px;text-align:center;color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <img class="mascot" src="mascot.png" alt="">
+    <h1>홈 화면에 앱으로 설치하기</h1>
+    <p>한 번 설치하면 아이콘만 눌러서 바로 열려요</p>
+    <div class="apps">
+      <div class="app">
+        <img src="icon-aws.png" alt="">
+        <div><b>AWS관리</b><small>지상 관측장비 위치·점검 현황</small></div>
+        <div class="url">
+          <code>sukjashin.github.io/weather-station-map/</code>
+          <button class="btn copy" data-copy="https://sukjashin.github.io/weather-station-map/">복사</button>
+          <a class="btn open" href="https://sukjashin.github.io/weather-station-map/" target="_blank" rel="noopener">열기</a>
+        </div>
+      </div>
+      <div class="app">
+        <img src="icon-obs.png" alt="">
+        <div><b>관측출장</b><small>출장지 검색·주변 시설·메모</small></div>
+        <div class="url">
+          <code>…/weather-station-map/observation_support_site/</code>
+          <button class="btn copy" data-copy="https://sukjashin.github.io/weather-station-map/observation_support_site/">복사</button>
+          <a class="btn open" href="https://sukjashin.github.io/weather-station-map/observation_support_site/" target="_blank" rel="noopener">열기</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="notice alert" id="inapp">
+    <b>지금은 카카오톡 안에서 열려 있어요.</b> 이 상태에서는 설치가 안 돼요.
+    화면 오른쪽 아래(또는 위) <b>⋮ / 더보기 → "다른 브라우저로 열기"</b>를 눌러 Chrome(안드로이드) 또는 Safari(아이폰)로 열어주세요.
+  </div>
+  <div class="notice">
+    <b>알아두세요</b> · 카카오톡에서 링크를 누르면 톡 안의 브라우저로 열려서 설치 버튼이 안 나와요.
+    꼭 <b>Chrome(안드로이드) / Safari(아이폰)</b>로 열어주세요. 위의 <b>복사</b> 버튼으로 주소를 복사해서 붙여넣어도 돼요.
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="휴대폰 종류">
+    <button class="tab" role="tab" data-os="android" aria-selected="true" aria-controls="android">안드로이드<small>Chrome</small></button>
+    <button class="tab" role="tab" data-os="ios" aria-selected="false" aria-controls="ios">아이폰<small>Safari</small></button>
+  </div>
+
+  <section class="panel" id="android" role="tabpanel">
+    <p class="lead">삼성·LG·픽셀 등 안드로이드 폰은 <b>Chrome</b>으로 열어주세요.</p>
+    <ol class="steps">
+      <li class="step">
+        <div class="head"><span class="num">1</span><div><h3>Chrome으로 주소 열기</h3><p>주소창에 위 주소를 입력하거나 링크를 눌러 접속합니다.</p></div></div>
+        <img src="step-android-1.png" alt="Chrome 주소창에 사이트 주소가 입력된 화면" loading="lazy">
+      </li>
+      <li class="step">
+        <div class="head"><span class="num">2</span><div><h3>'홈 화면에 앱으로 설치' 누르기</h3><p>화면 위쪽 파란 머리말의 설치 버튼을 누르세요. 안 보이면 Chrome 메뉴(⋮) → <b>앱 설치</b>를 누릅니다.</p></div></div>
+        <img src="step-android-2.png" alt="파란 머리말 안의 '홈 화면에 앱으로 설치' 버튼" loading="lazy">
+      </li>
+      <li class="step">
+        <div class="head"><span class="num">3</span><div><h3>'설치' 확인</h3><p>팝업에서 <b>설치</b>를 누르면 홈 화면에 아이콘이 만들어져요.</p></div></div>
+        <img src="step-android-3.png" alt="앱 설치 팝업에서 설치 버튼을 누르는 화면" loading="lazy">
+      </li>
+    </ol>
+  </section>
+
+  <section class="panel" id="ios" role="tabpanel" hidden>
+    <p class="lead">아이폰은 반드시 <b>Safari</b>로 열어야 해요. (크롬·카톡 안 브라우저는 안 돼요)</p>
+    <ol class="steps">
+      <li class="step">
+        <div class="head"><span class="num">1</span><div><h3>Safari로 주소 열기</h3><p>Safari 앱에서 주소를 열어주세요. 카카오톡 링크는 <b>다른 브라우저로 열기 → Safari</b>를 선택하세요.</p></div></div>
+        <img src="step-ios-1.png" alt="Safari 주소창에 사이트가 열린 화면" loading="lazy">
+      </li>
+      <li class="step">
+        <div class="head"><span class="num">2</span><div><h3>아래쪽 공유 버튼 누르기</h3><p>화면 맨 아래 가운데, 네모에 위 화살표 모양 버튼이에요.</p></div></div>
+        <img src="step-ios-2.png" alt="Safari 아래 도구 막대의 공유 버튼" loading="lazy">
+      </li>
+      <li class="step">
+        <div class="head"><span class="num">3</span><div><h3>'홈 화면에 추가' 고르기</h3><p>공유 메뉴를 위로 올리면 보이는 <b>홈 화면에 추가</b>를 눌러요.</p></div></div>
+        <img src="step-ios-3.png" alt="공유 메뉴에서 홈 화면에 추가 항목" loading="lazy">
+      </li>
+      <li class="step">
+        <div class="head"><span class="num">4</span><div><h3>오른쪽 위 '추가' 누르기</h3><p>이름(AWS관리 / 관측출장)을 확인하고 <b>추가</b>를 누르면 끝!</p></div></div>
+        <img src="step-ios-4.png" alt="홈 화면에 추가 창의 추가 버튼" loading="lazy">
+      </li>
+    </ol>
+  </section>
+
+  <section class="done">
+    <h2>설치 완료! 이렇게 생겨요</h2>
+    <p>이제 아이콘만 누르면 앱처럼 전체 화면으로 열려요.</p>
+    <div class="icons">
+      <figure><img src="icon-aws.png" alt=""><figcaption>AWS관리</figcaption></figure>
+      <figure><img src="icon-obs.png" alt=""><figcaption>관측출장</figcaption></figure>
+    </div>
+    <div class="tip">
+      <b>아이콘이 예전 모양이면?</b>
+      <p>기존 아이콘을 삭제하고 위 순서로 다시 추가해 주세요. (아이폰은 추가하는 순간의 아이콘을 기억해요)</p>
+    </div>
+  </section>
+
+  <footer>광주지방기상청 관측과</footer>
+</main>
+
+<script>
+(function(){
+  var ua = navigator.userAgent || '';
+  var tabs = document.querySelectorAll('.tab');
+  var panels = { android: document.getElementById('android'), ios: document.getElementById('ios') };
+
+  function show(os, updateHash){
+    tabs.forEach(function(t){ t.setAttribute('aria-selected', String(t.dataset.os === os)); });
+    Object.keys(panels).forEach(function(k){ panels[k].hidden = (k !== os); });
+    if (updateHash) { try { history.replaceState(null, '', '#' + os); } catch (e) {} }
+  }
+  tabs.forEach(function(t){ t.addEventListener('click', function(){ show(t.dataset.os, true); }); });
+
+  // 처음 열 때: 주소 뒤 #ios / #android → 없으면 내 폰 종류로 자동 선택
+  var hash = (location.hash || '').replace('#', '');
+  var auto = /iPhone|iPad|iPod/i.test(ua) ? 'ios' : 'android';
+  show(hash === 'ios' || hash === 'android' ? hash : auto, false);
+
+  // 카카오톡 안 브라우저면 경고 표시
+  if (/KAKAOTALK/i.test(ua)) document.getElementById('inapp').classList.add('show');
+
+  // 주소 복사
+  document.querySelectorAll('[data-copy]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var text = b.dataset.copy;
+      var done = function(){ var old = b.textContent; b.textContent = '복사됨'; setTimeout(function(){ b.textContent = old; }, 1400); };
+      if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done, function(){ fallback(text, done); }); }
+      else fallback(text, done);
+    });
+  });
+  function fallback(text, done){
+    var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { window.prompt('주소를 복사하세요', text); }
+    document.body.removeChild(ta);
+  }
+})();
+</script>
+</body>
+</html>
