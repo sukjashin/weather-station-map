@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>광주·전남 AWS 기상관측망 관리</title>
+<meta name="theme-color" content="#0d2f5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AWS관리">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script src="pwa.js" defer></script>
 <!-- 지도 라이브러리는 저장소 안에 두었습니다. 외부 접속이 막힌 곳에서도 지도가 뜹니다. -->
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <style>
@@ -408,6 +417,16 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
 
 .loading{padding:60px 20px;text-align:center;color:var(--muted)}
 @media (min-width:560px){ body{padding:0} }
+
+/* ===== 앱(홈 화면 설치) 사용 시 ===== */
+body{overscroll-behavior-y:none}
+header{padding-top:calc(26px + env(safe-area-inset-top))}
+.install-btn{
+  margin-top:14px;border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.14);color:#fff;
+  border-radius:999px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;
+}
+.install-btn:hover{background:rgba(255,255,255,.24)}
+.install-btn[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -427,6 +446,7 @@ footer h3{margin:0 0 12px;font-size:15px;font-weight:700}
         <p>자동기상관측장비 위치 안내</p>
       </div>
     </div>
+      <button type="button" class="install-btn" id="installBtn" hidden>📲 홈 화면에 앱으로 설치</button>
   </header>
 
   <!-- 관측 업무 메뉴 -->
